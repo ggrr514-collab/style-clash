@@ -120,9 +120,6 @@ function ProductSection({ keywords }) {
       </div>
     );
   }
-
-  const hasProducts = Object.keys(products).length > 0;
-
   return (
     <div style={{background:"rgba(212,165,116,.04)",borderRadius:"16px",padding:"18px 14px",border:"1px solid rgba(212,165,116,.1)",marginBottom:"14px"}}>
       <div style={{fontSize:"11px",fontWeight:700,color:"#d4a574",marginBottom:"12px",letterSpacing:"1px",paddingLeft:"4px"}}>🛒 おすすめアイテム</div>
