@@ -1,6 +1,6 @@
 export default async function handler(req, res) {
   // ★ ここにあなたのIDを入れてください
-  const APP_ID = "53b7a99b-f13a-40b4-bb42-f40a2d198f56";
+  const APP_ID = "pk_UQlFSQbSHMs6Wz2IiWbxUgvvfUXFr5wcFCqimCRgtlB";
   const AFF_ID = "5293020a.dd20fd9b.5293020b.265498fa";
 
   const { keyword } = req.query;
