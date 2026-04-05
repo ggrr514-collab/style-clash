@@ -1,33 +1,15 @@
 export default async function handler(req, res) {
-  // ★ ここにあなたのIDを入れてください
   const APP_ID = "pk_UQlFSQbSHMs6Wz2IiWbxUgvvfUXFr5wcFCqimCRgtlB";
   const AFF_ID = "5293020a.dd20fd9b.5293020b.265498fa";
+  const keyword = req.query.keyword || "Tシャツ";
 
-  const { keyword } = req.query;
-
-  if (!keyword) {
-    return res.status(400).json({ error: "keyword is required" });
-  }
+  const url = "https://app.rakuten.co.jp/services/api/IchibaItem/Search/20220601?applicationId=" + APP_ID + "&affiliateId=" + AFF_ID + "&keyword=" + encodeURIComponent(keyword) + "&hits=3&sort=-reviewCount&imageFlag=1";
 
   try {
-    const url = `https://app.rakuten.co.jp/services/api/IchibaItem/Search/20220601?applicationId=${APP_ID}&affiliateId=${AFF_ID}&keyword=${encodeURIComponent(keyword)}&hits=3&sort=-reviewCount&imageFlag=1`;
-
     const response = await fetch(url);
-    const data = await response.json();
-
-    if (data.Items && data.Items.length > 0) {
-      const items = data.Items.slice(0, 3).map(it => ({
-        name: it.Item.itemName.substring(0, 50) + (it.Item.itemName.length > 50 ? "..." : ""),
-        price: it.Item.itemPrice,
-        img: it.Item.mediumImageUrls[0]?.imageUrl || "",
-        url: it.Item.affiliateUrl || it.Item.itemUrl,
-      }));
-      res.setHeader("Cache-Control", "s-maxage=3600");
-      return res.status(200).json({ items });
-    } else {
-      return res.status(200).json({ items: [] });
-    }
+    const text = await response.text();
+    return res.status(200).json({ debug_url: url, debug_status: response.status, debug_body: text.substring(0, 500) });
   } catch (e) {
-    return res.status(500).json({ error: "API request failed" });
+    return res.status(200).json({ debug_error: e.message });
   }
 }
