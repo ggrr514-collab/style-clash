@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>埼玉県公立入試 国語文法 小テスト</title>
+<style>
+  :root {
+    --bg:#f6f3ec; --card:#ffffff; --ink:#222; --sub:#666;
+    --accent:#0f6aa3; --accent-soft:#e7f1f8;
+    --ok:#2e8b57; --ng:#c0392b; --line:#e1dbce;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    line-height:1.75;-webkit-text-size-adjust:100%}
+  .wrap{max-width:720px;margin:0 auto;padding:20px 16px 80px}
+  header{text-align:center;margin-bottom:18px}
+  h1{font-size:20px;margin:0 0 4px;letter-spacing:.05em}
+  .sub{color:var(--sub);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);
+    border-radius:10px;padding:18px 18px 22px;margin-bottom:14px;
+    box-shadow:0 1px 0 rgba(0,0,0,.02)}
+  .meta{display:flex;justify-content:space-between;
+    font-size:12px;color:var(--sub);margin-bottom:8px}
+  .cat{display:inline-block;padding:2px 10px;background:var(--accent-soft);
+    color:var(--accent);border-radius:999px;font-size:11px;font-weight:700}
+  .q{font-size:16px;white-space:pre-wrap;margin:6px 0 14px}
+  .choices{display:flex;flex-direction:column;gap:8px}
+  .choice{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);
+    border-radius:8px;cursor:pointer;background:#fff;
+    transition:.12s;font-size:15px;align-items:flex-start}
+  .choice:hover{border-color:var(--accent);background:#fafbfc}
+  .choice input{margin-top:6px}
+  .choice.sel{border-color:var(--accent);background:var(--accent-soft)}
+  .num{flex:0 0 24px;font-weight:700;color:var(--sub)}
+  .btns{display:flex;gap:10px;justify-content:center;margin-top:8px}
+  button{font:inherit;padding:10px 22px;border-radius:6px;cursor:pointer;
+    border:1px solid var(--accent);background:var(--accent);color:#fff;
+    font-size:15px;letter-spacing:.05em}
+  button.ghost{background:#fff;color:var(--accent)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .progress{height:4px;background:#eae4d4;border-radius:2px;overflow:hidden;
+    margin:10px 0 6px}
+  .bar{height:100%;background:var(--accent);transition:.25s width}
+  /* 結果 */
+  .result h2{text-align:center;margin:4px 0}
+  .score{text-align:center;font-size:28px;font-weight:700;color:var(--accent);
+    letter-spacing:.05em}
+  .review{margin-top:14px}
+  .review .card{padding:14px}
+  .rq{font-size:14px;margin-bottom:8px;white-space:pre-wrap}
+  .ans-row{font-size:13px;margin:2px 0}
+  .ok{color:var(--ok);font-weight:700}
+  .ng{color:var(--ng);font-weight:700}
+  .exp{font-size:13px;color:#444;background:#faf7ef;
+    border-left:3px solid var(--accent);padding:8px 10px;margin-top:6px;
+    border-radius:0 6px 6px 0}
+  footer{text-align:center;font-size:11px;color:var(--sub);margin-top:24px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>埼玉県公立入試 国語文法 小テスト</h1>
+    <div class="sub">全問題からランダムに20問を出題します</div>
+  </header>
+
+  <div id="app"></div>
+
+  <footer>© 中3国語文法小テスト（開発中）</footer>
+</div>
+
+<script src="./questions.js"></script>
+<script>
+/* ─── 設定 ──────────────────── */
+const PICK_COUNT = 20; // 1回のテストで出す問題数
+
+/* ─── ユーティリティ ─────────── */
+const shuffle = arr => {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
+/* ─── 状態 ──────────────────── */
+let state = null;
+
+function startQuiz() {
+  const pool = QUESTIONS.length >= PICK_COUNT ? QUESTIONS : QUESTIONS;
+  const picked = shuffle(pool).slice(0, Math.min(PICK_COUNT, pool.length));
+  // 選択肢もシャッフル（正解インデックスを追跡）
+  const questions = picked.map(q => {
+    const order = shuffle([0,1,2,3]);
+    return {
+      id: q.id,
+      cat: q.cat,
+      q: q.q,
+      choices: order.map(i => q.choices[i]),
+      answer: order.indexOf(q.answer),
+      exp: q.exp,
+      _origAnswer: q.choices[q.answer]
+    };
+  });
+  state = { questions, idx: 0, answers: Array(questions.length).fill(null), done: false };
+  render();
+}
+
+/* ─── 描画 ──────────────────── */
+function render() {
+  const app = document.getElementById("app");
+  if (state.done) return renderResult(app);
+
+  const i = state.idx;
+  const q = state.questions[i];
+  const total = state.questions.length;
+  const selected = state.answers[i];
+
+  app.innerHTML = `
+    <div class="progress"><div class="bar" style="width:${(i/total)*100}%"></div></div>
+    <div class="meta">
+      <span class="cat">${q.cat}</span>
+      <span>第 ${i+1} 問 / ${total} 問</span>
+    </div>
+    <div class="card">
+      <div class="q">${escapeHTML(q.q)}</div>
+      <div class="choices">
+        ${q.choices.map((c, idx) => `
+          <label class="choice ${selected===idx?'sel':''}" data-idx="${idx}">
+            <input type="radio" name="c" value="${idx}" ${selected===idx?'checked':''}/>
+            <span class="num">${"①②③④"[idx]}</span>
+            <span>${escapeHTML(c)}</span>
+          </label>
+        `).join("")}
+      </div>
+    </div>
+    <div class="btns">
+      ${i>0?'<button class="ghost" id="prev">← 前へ</button>':""}
+      <button id="next" ${selected===null?"disabled":""}>
+        ${i===total-1?"採点する":"次へ →"}
+      </button>
+    </div>
+  `;
+
+  app.querySelectorAll(".choice").forEach(el => {
+    el.addEventListener("click", () => {
+      state.answers[i] = Number(el.dataset.idx);
+      render();
+    });
+  });
+  const nextBtn = app.querySelector("#next");
+  if (nextBtn) nextBtn.onclick = () => {
+    if (state.answers[i] === null) return;
+    if (i === total - 1) { state.done = true; }
+    else { state.idx++; }
+    render();
+    window.scrollTo({top:0,behavior:"smooth"});
+  };
+  const prevBtn = app.querySelector("#prev");
+  if (prevBtn) prevBtn.onclick = () => { state.idx--; render(); window.scrollTo({top:0}); };
+}
+
+function renderResult(app) {
+  const qs = state.questions;
+  const correct = qs.reduce((s,q,i) => s + (state.answers[i]===q.answer?1:0), 0);
+  app.innerHTML = `
+    <div class="card result">
+      <h2>結果</h2>
+      <div class="score">${correct} / ${qs.length} 点</div>
+      <div style="text-align:center;color:var(--sub);font-size:13px;margin-top:4px">
+        ${commentFor(correct, qs.length)}
+      </div>
+      <div class="btns" style="margin-top:14px">
+        <button id="again">もう一度</button>
+      </div>
+    </div>
+    <h3 style="margin:18px 6px 8px;font-size:14px;color:var(--sub);letter-spacing:.05em">解説</h3>
+    <div class="review">
+      ${qs.map((q,i)=>{
+        const ok = state.answers[i]===q.answer;
+        const your = state.answers[i]===null ? "（無解答）" : q.choices[state.answers[i]];
+        return `
+          <div class="card">
+            <div class="meta">
+              <span class="cat">${q.cat}</span>
+              <span>第 ${i+1} 問</span>
+            </div>
+            <div class="rq">${escapeHTML(q.q)}</div>
+            <div class="ans-row">あなたの解答：<span class="${ok?'ok':'ng'}">${escapeHTML(your)}</span> ${ok?'◯':'✕'}</div>
+            <div class="ans-row">正解：<span class="ok">${escapeHTML(q.choices[q.answer])}</span></div>
+            <div class="exp">${escapeHTML(q.exp)}</div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+  document.getElementById("again").onclick = () => { startQuiz(); window.scrollTo({top:0}); };
+}
+
+function commentFor(c, total) {
+  const p = c / total;
+  if (p >= 0.9) return "素晴らしい！この調子で入試本番も頑張ろう。";
+  if (p >= 0.7) return "よくできた。間違えた問題の解説をしっかり読もう。";
+  if (p >= 0.5) return "もう一歩。苦手分野を重点的に復習しよう。";
+  return "まずは解説を丁寧に読み、基礎から固め直そう。";
+}
+
+function escapeHTML(s){
+  return String(s).replace(/[&<>"']/g, ch => (
+    {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]
+  ));
+}
+
+startQuiz();
+</script>
+</body>
+</html>
