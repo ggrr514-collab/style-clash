@@ -1,26 +1,26 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { generateFloorPlan, CELL, ROOM_TYPES } from "./floorplan.js";
+import { generateHouse, CELL } from "./floorplan.js";
 import { HouseGame } from "./three-house.js";
 
 /* 部屋タイプ別のミニマップ色 */
 const MAP_COLOR = {
-  genkan: "#c9bda6", corridor: "#e0d3b8", ldk: "#f2e3c0", living: "#f2e3c0",
-  kitchen: "#e8d6ad", bedroom: "#efe0bd", washitsu: "#cfe0a0",
+  genkan: "#c9bda6", corridor: "#e0d3b8", hall: "#e0d3b8", stairs: "#d8b98c", stairwell: "#d8b98c",
+  ldk: "#f2e3c0", kitchen: "#e8d6ad", bedroom: "#efe0bd", washitsu: "#cfe0a0",
   bath: "#bfe0ea", toilet: "#dbeaee", washroom: "#cfe0e6",
   closet: "#d8c4a4", balcony: "#c8c8c8",
 };
 
-const PLAN_TYPES = [
-  { id: "1K",   label: "1K",   desc: "ひとり暮らしのワンルーム" },
-  { id: "1LDK", label: "1LDK", desc: "少し広めのひとり暮らし" },
-  { id: "2LDK", label: "2LDK", desc: "カップル・二人暮らし向け" },
-  { id: "3LDK", label: "3LDK", desc: "ファミリー向けの間取り" },
+const SIZES = [
+  { idx: 0, label: "2LDK", desc: "コンパクトな一戸建て" },
+  { idx: 1, label: "3LDK", desc: "標準的なファミリー住宅" },
+  { idx: 2, label: "4LDK", desc: "ゆとりある間取り" },
+  { idx: 3, label: "5LDK", desc: "広々とした大きな家" },
 ];
 
 export default function App() {
   const [screen, setScreen] = useState("title");   // title | play
-  const [planType, setPlanType] = useState("2LDK");
-  const [plan, setPlan] = useState(null);
+  const [sizeIdx, setSizeIdx] = useState(1);
+  const [house, setHouse] = useState(null);
   const [room, setRoom] = useState(null);
   const [locked, setLocked] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
@@ -28,24 +28,20 @@ export default function App() {
   const mountRef = useRef(null);
   const gameRef = useRef(null);
   const miniRef = useRef(null);
+  const houseRef = useRef(null);   // 描画ループから最新の家を参照
 
   useEffect(() => {
     setIsTouch("ontouchstart" in window || navigator.maxTouchPoints > 0);
   }, []);
 
-  /* ゲーム開始 / 家生成 */
-  const startGame = useCallback((type) => {
-    setPlanType(type);
-    setScreen("play");
-  }, []);
+  const startGame = useCallback((idx) => { setSizeIdx(idx); setScreen("play"); }, []);
 
-  const newHouse = useCallback((type) => {
-    const t = type || planType;
-    const p = generateFloorPlan(t);
-    setPlan(p);
-    setRoom(null);
-    if (gameRef.current) gameRef.current.build(p);
-  }, [planType]);
+  const newHouse = useCallback((idx) => {
+    const i = idx == null ? sizeIdx : idx;
+    const h = generateHouse(i);
+    houseRef.current = h; setHouse(h); setRoom(null);
+    if (gameRef.current) gameRef.current.build(h);
+  }, [sizeIdx]);
 
   /* play画面に入ったら three を初期化 */
   useEffect(() => {
@@ -55,17 +51,15 @@ export default function App() {
       onLock: (l) => setLocked(l),
     });
     gameRef.current = game;
-    const p = generateFloorPlan(planType);
-    setPlan(p);
-    game.build(p);
-    game.start();
-
+    const h = generateHouse(sizeIdx);
+    houseRef.current = h; setHouse(h);
+    game.build(h); game.start();
     return () => { game.dispose(); gameRef.current = null; };
   }, [screen]); // eslint-disable-line
 
-  /* ミニマップ描画ループ */
+  /* ミニマップ描画ループ(現在フロアを描画) */
   useEffect(() => {
-    if (screen !== "play" || !plan || !miniRef.current) return;
+    if (screen !== "play" || !miniRef.current) return;
     const cv = miniRef.current;
     const ctx = cv.getContext("2d");
     let raf;
@@ -76,44 +70,40 @@ export default function App() {
 
     const draw = () => {
       raf = requestAnimationFrame(draw);
+      const h = houseRef.current; if (!h) return;
+      const pl = gameRef.current ? gameRef.current.getPlayer() : { x: 0, z: 0, yaw: Math.PI, floor: 0 };
+      const floor = h.floors[pl.floor] || h.floors[0];
       const pad = 8;
-      const scale = Math.min((CSS - pad * 2) / plan.widthM, (CSS - pad * 2) / plan.depthM);
+      const scale = Math.min((CSS - pad*2)/h.widthM, (CSS - pad*2)/h.depthM);
       const ox = pad, oy = pad;
       ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       ctx.clearRect(0, 0, CSS, CSS);
-      ctx.fillStyle = "rgba(20,22,30,0.55)";
-      ctx.fillRect(0, 0, CSS, CSS);
-      const X = (mx) => ox + mx * scale;
-      const Y = (mz) => oy + mz * scale;
+      ctx.fillStyle = "rgba(20,22,30,0.55)"; ctx.fillRect(0, 0, CSS, CSS);
+      const X = (mx) => ox + mx*scale, Y = (mz) => oy + mz*scale;
 
-      // 部屋塗り
-      for (const rm of plan.rooms) {
+      for (const rm of floor.rooms) {
         ctx.fillStyle = MAP_COLOR[rm.type] || "#ddd";
-        ctx.fillRect(X(rm.x0 * CELL), Y(rm.z0 * CELL), (rm.x1 - rm.x0) * CELL * scale, (rm.z1 - rm.z0) * CELL * scale);
+        ctx.fillRect(X(rm.x0*CELL), Y(rm.z0*CELL), (rm.x1-rm.x0)*CELL*scale, (rm.z1-rm.z0)*CELL*scale);
       }
-      // 壁
-      for (const w of plan.walls) {
+      for (const w of floor.walls) {
         ctx.strokeStyle = w.type === "window" ? "#5fb8d8" : w.type === "rail" ? "#9aa" : "#33302a";
         ctx.lineWidth = w.type === "solid" ? 2 : 1.5;
         ctx.beginPath(); ctx.moveTo(X(w.x1), Y(w.z1)); ctx.lineTo(X(w.x2), Y(w.z2)); ctx.stroke();
       }
-      // プレイヤー
-      if (gameRef.current) {
-        const pl = gameRef.current.getPlayer();
-        const px = X(pl.x), py = Y(pl.z);
-        ctx.save();
-        ctx.translate(px, py);
-        ctx.rotate(-pl.yaw);   // yaw=PIで奥(z+)向き
-        ctx.fillStyle = "#ff4d5e";
-        ctx.beginPath();
-        ctx.moveTo(0, -7); ctx.lineTo(5, 5); ctx.lineTo(-5, 5); ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-      }
+      // 階段位置マーク
+      const st = h.stairs;
+      ctx.strokeStyle = "#c98a3a"; ctx.lineWidth = 1.5;
+      ctx.strokeRect(X(st.x), Y(st.zBottom), (st.xEnd-st.x)*scale, (st.zTop-st.zBottom)*scale);
+
+      const px = X(pl.x), py = Y(pl.z);
+      ctx.save(); ctx.translate(px, py); ctx.rotate(-pl.yaw);
+      ctx.fillStyle = "#ff4d5e";
+      ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(5, 5); ctx.lineTo(-5, 5); ctx.closePath(); ctx.fill();
+      ctx.restore();
     };
     draw();
     return () => cancelAnimationFrame(raf);
-  }, [screen, plan]);
+  }, [screen]);
 
   /* ══════════ タイトル画面 ══════════ */
   if (screen === "title") {
@@ -123,12 +113,12 @@ export default function App() {
           <div style={S.logoBadge}>🏠 HOME EXPLORER</div>
           <h1 style={S.h1}>間取り探索ハウス</h1>
           <p style={S.lead}>
-            日本の住宅っぽい間取りを<b>毎回自動生成</b>。<br />
-            一人称視点で、リアルな家の中を自由に歩き回ろう。
+            2階建ての一戸建てを<b>毎回自動生成</b>。<br />
+            階段で2階へ。一人称でリアルな家の中を歩き回ろう。
           </p>
           <div style={S.grid}>
-            {PLAN_TYPES.map((t) => (
-              <button key={t.id} style={S.card} onClick={() => startGame(t.id)}
+            {SIZES.map((t) => (
+              <button key={t.idx} style={S.card} onClick={() => startGame(t.idx)}
                 onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-4px)")}
                 onMouseLeave={(e) => (e.currentTarget.style.transform = "none")}>
                 <div style={S.cardLabel}>{t.label}</div>
@@ -157,14 +147,14 @@ export default function App() {
       {/* 上部HUD: 現在の部屋 */}
       <div style={S.topbar}>
         <div style={S.roomTag}>
-          <span style={S.roomIcon}>📍</span>
-          {room ? (
+          <span style={S.floorBadge}>{room?.floor ? `${room.floor}F` : "1F"}</span>
+          {room && room.name ? (
             <span><b>{room.name}</b>{room.tatami ? ` · 約${room.tatami}畳` : ""}</span>
           ) : (
-            <span style={{ opacity: 0.7 }}>屋外 / 探索中…</span>
+            <span style={{ opacity: 0.7 }}>探索中…</span>
           )}
         </div>
-        <div style={S.planTag}>{plan?.type} · {plan?.widthM.toFixed(1)}×{plan?.depthM.toFixed(1)}m</div>
+        <div style={S.planTag}>{house?.label} · {house?.widthM.toFixed(1)}×{house?.depthM.toFixed(1)}m</div>
       </div>
 
       {/* ミニマップ */}
@@ -188,7 +178,7 @@ export default function App() {
             <div style={{ fontSize: 13, opacity: 0.75, marginTop: 8, lineHeight: 1.7 }}>
               <b>WASD / 矢印キー</b> … 移動<br />
               <b>マウス</b> … 見回す ／ <b>Shift</b> … ダッシュ<br />
-              <b>Esc</b> … 操作解除
+              階段を上ると<b>2階</b>へ ／ <b>Esc</b> … 操作解除
             </div>
           </div>
         </div>
@@ -250,6 +240,10 @@ const S = {
     display: "flex", alignItems: "center", gap: 8,
   },
   roomIcon: { fontSize: 15 },
+  floorBadge: {
+    fontSize: 13, fontWeight: 800, color: "#20160a", background: "#ffce6a",
+    borderRadius: 12, padding: "2px 9px", minWidth: 22, textAlign: "center",
+  },
   planTag: {
     background: "rgba(15,18,28,.72)", color: "#ffd27a", padding: "9px 14px", borderRadius: 24,
     fontSize: 13, fontWeight: 700, backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,.1)",
