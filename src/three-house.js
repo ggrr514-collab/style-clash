@@ -227,6 +227,71 @@ function box(w, h, d, mat, x = 0, y = 0, z = 0) {
   m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
   return m;
 }
+function cyl(rt, rb, h, mat, x=0, y=0, z=0, seg=16) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
+  m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; return m;
+}
+
+/* 葉のテクスチャ(中肋+側脈)と葉のジオメトリ(尖った楕円) */
+let _leafGeo = null, _leafMat = null;
+function leafGeo() {
+  if (_leafGeo) return _leafGeo;
+  const sh = new THREE.Shape();
+  sh.moveTo(0, 0);
+  sh.bezierCurveTo(0.34, 0.28, 0.30, 0.82, 0, 1.12);
+  sh.bezierCurveTo(-0.30, 0.82, -0.34, 0.28, 0, 0);
+  _leafGeo = new THREE.ShapeGeometry(sh, 8);
+  _leafGeo.translate(0, 0, 0);
+  return _leafGeo;
+}
+function leafMaterial() {
+  if (_leafMat) return _leafMat;
+  const tex = makeCanvasTexture((ctx, s) => {
+    const g = ctx.createLinearGradient(0, 0, 0, s);
+    g.addColorStop(0, "#2f6b2a"); g.addColorStop(1, "#4f9a3e");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = "rgba(20,60,20,0.55)"; ctx.lineWidth = s*0.03;   // 中肋
+    ctx.beginPath(); ctx.moveTo(s/2, s); ctx.lineTo(s/2, 0); ctx.stroke();
+    ctx.lineWidth = s*0.012;                                          // 側脈
+    for (let i = 1; i < 7; i++) {
+      const y = s - i*s/7;
+      ctx.beginPath(); ctx.moveTo(s/2, y); ctx.lineTo(s*0.5+ s*0.28, y - s*0.09); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s/2, y); ctx.lineTo(s*0.5- s*0.28, y - s*0.09); ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.fillRect(0,0,s,s*0.4); // 艶
+  }, 128);
+  _leafMat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.55, metalness: 0.0 });
+  return _leafMat;
+}
+function makePlant(scale = 1) {
+  const g = new THREE.Group();
+  const potH = 0.34 * scale, potR = 0.19 * scale;
+  const pot = cyl(potR, potR*0.78, potH, M(0xbfb3a0, { rough: 0.9 }), 0, potH/2, 0);
+  g.add(pot);
+  g.add(cyl(potR*0.94, potR*0.94, 0.04, M(0x3a2a1e, { rough: 1 }), 0, potH - 0.01, 0)); // 土
+  const geo = leafGeo(), mat = leafMaterial();
+  const stems = 6;
+  for (let s = 0; s < stems; s++) {
+    const a = (s / stems) * Math.PI * 2 + s*0.7;
+    const lean = 0.25 + (s % 3) * 0.12;
+    const sx = Math.cos(a) * 0.05, sz = Math.sin(a) * 0.05;
+    const leaves = 3 + (s % 3);
+    for (let l = 0; l < leaves; l++) {
+      const t = l / leaves;
+      const h = potH + 0.15 + t * (0.7 + (s%2)*0.35) * scale;
+      const leaf = new THREE.Mesh(geo, mat);
+      const sc = (0.34 + (1 - t) * 0.22) * scale;
+      leaf.scale.set(sc, sc, sc);
+      leaf.position.set(sx + Math.cos(a) * (0.12 + t*0.28) * scale, h, sz + Math.sin(a) * (0.12 + t*0.28) * scale);
+      leaf.rotation.y = a + (l % 2 ? 0.5 : -0.5);
+      leaf.rotation.x = -Math.PI/2 + (0.9 - lean - t*0.5);  // 上向き〜やや外反り
+      leaf.rotation.z = (l % 2 ? 0.3 : -0.3);
+      leaf.castShadow = true;
+      g.add(leaf);
+    }
+  }
+  return g;
+}
 
 /* ── 家具ファクトリ（内部yは床基準0） ── */
 function furnitureMesh(kind, opt, tex) {
@@ -328,12 +393,39 @@ function furnitureMesh(kind, opt, tex) {
       break;
     }
     case "toiletunit": {
-      g.add(box(0.4, 0.4, 0.62, M(0xf6f6f6,{rough:0.25}), 0, 0.2, 0.04));
-      g.add(box(0.42, 0.52, 0.22, M(0xf6f6f6,{rough:0.25}), 0, 0.46, -0.24));
-      g.add(box(0.44, 0.06, 0.44, M(0xffffff,{rough:0.25}), 0, 0.42, 0.08));
+      const cer = M(0xf7f6f3, { rough: 0.2 });
+      // 台座・便器ボウル
+      g.add(cyl(0.13, 0.19, 0.36, cer, 0, 0.18, 0.06, 20));
+      const bowl = cyl(0.2, 0.17, 0.16, cer, 0, 0.42, 0.06, 22); bowl.scale.z = 1.2; g.add(bowl);
+      // 水面
+      const water = cyl(0.13, 0.13, 0.02, M(0xbfe0ea, { rough: 0.1, metal: 0.1 }), 0, 0.45, 0.06, 18); water.scale.z = 1.2; g.add(water);
+      // 便座(オーバル)＋開いたフタ
+      const seat = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.035, 10, 22), cer);
+      seat.rotation.x = Math.PI/2; seat.position.set(0, 0.5, 0.07); seat.scale.z = 1.18; g.add(seat);
+      const lid = cyl(0.18, 0.18, 0.03, cer, 0, 0.7, -0.16, 22); lid.scale.z = 1.15; lid.rotation.x = -0.25; g.add(lid);
+      // タンク＋手洗い＋レバー
+      g.add(box(0.42, 0.5, 0.19, cer, 0, 0.62, -0.28));
+      g.add(box(0.3, 0.02, 0.13, M(0xe8eef0, { rough: 0.2 }), 0, 0.88, -0.26)); // 手洗い皿
+      g.add(cyl(0.012, 0.012, 0.08, M(0xbfbfc4, { metal: 0.7, rough: 0.2 }), 0, 0.92, -0.3, 8)); // 蛇口
+      g.add(box(0.06, 0.03, 0.03, M(0xcfcfcf, { metal: 0.5 }), 0.18, 0.82, -0.2)); // レバー
       break;
     }
-    case "toiletpaper": g.add(box(0.14, 0.14, 0.14, M(0xffffff), 0, 0.7, 0)); break;
+    case "toiletpaper": {
+      g.add(box(0.16, 0.03, 0.06, M(0xbfbfbf, { metal: 0.5, rough: 0.3 }), 0, 0.72, 0));   // ホルダー
+      const roll = cyl(0.06, 0.06, 0.11, M(0xffffff, { rough: 0.95 }), 0, 0.68, 0.02, 16); roll.rotation.z = Math.PI/2; g.add(roll);
+      break;
+    }
+    case "toiletmat": {
+      const mat = new THREE.Mesh(new THREE.PlaneGeometry(w || 0.7, 0.6), new THREE.MeshStandardMaterial({ color: 0x7fa8b8, roughness: 1 }));
+      mat.rotation.x = -Math.PI/2; mat.position.y = 0.02; mat.receiveShadow = true; g.add(mat);
+      break;
+    }
+    case "cornershelf": {
+      const s = grainMat(0x9a7a50);
+      g.add(box(0.3, 0.02, 0.3, s, 0, 1.3, 0));
+      g.add(box(0.3, 0.02, 0.3, s, 0, 0.95, 0));
+      break;
+    }
     case "bathtub": {
       g.add(box(w, 0.56, 0.85, M(0xf3f6f7,{rough:0.2}), 0, 0.28, 0));
       g.add(box(w-0.16, 0.16, 0.66, M(0xbfe2ec,{rough:0.12,metal:0.1,opacity:0.85,transparent:true}), 0, 0.44, 0));
@@ -362,14 +454,9 @@ function furnitureMesh(kind, opt, tex) {
       g.add(box(0.5,0.09,0.5, M(0x9a5a4a), -0.82, 0.05, 0)); g.add(box(0.5,0.09,0.5, M(0x9a5a4a), 0.82, 0.05, 0));
       break;
     }
-    case "plant": {
-      g.add(box(0.3, 0.34, 0.3, M(0x9a7048, { rough: 0.9 }), 0, 0.17, 0)); // 鉢
-      g.add(box(0.05, 0.5, 0.05, M(0x6a5a3a), 0, 0.5, 0));                  // 幹
-      // 葉を小さなブロックで茂らせる
-      const leaf = M(0x4c8a42, { rough: 1 }), leaf2 = M(0x3c7a38, { rough: 1 });
-      const blobs = [[0,0.9,0,0.34],[0.14,0.78,0.05,0.24],[-0.12,0.82,-0.06,0.26],[0.05,1.02,-0.08,0.22],[-0.06,1.0,0.1,0.2]];
-      for (const [x,y,z,s] of blobs) g.add(box(s, s, s, (x+z>0?leaf:leaf2), x, y, z));
-      break;
+    case "plant": return makePlant(opt.big ? 1.25 : 1.0);
+    case "tabletop": { // 卓上の小さな観葉
+      return makePlant(0.5);
     }
     case "picture": {
       g.add(box(0.6, 0.46, 0.03, grainMat(0x6a4a2a), 0, 1.55, 0.01));       // 額縁
@@ -404,17 +491,58 @@ function furnitureMesh(kind, opt, tex) {
       break;
     }
     case "clock": {
-      g.add(box(0.34, 0.34, 0.04, M(0xf4efe4, { rough: 0.6 }), 0, 1.6, 0.02));
-      g.add(box(0.36, 0.36, 0.03, grainMat(0x7a5836), 0, 1.6, 0.005));
-      g.add(box(0.02, 0.13, 0.01, M(0x222), 0, 1.63, 0.05));
-      g.add(box(0.1, 0.02, 0.01, M(0x222), 0.03, 1.6, 0.05));
+      const rim = cyl(0.19, 0.19, 0.025, grainMat(0x5a3a22), 0, 1.6, 0.015, 26); rim.rotation.x = Math.PI/2; g.add(rim);
+      const face = cyl(0.165, 0.165, 0.03, M(0xf6f2e8, { rough: 0.5 }), 0, 1.6, 0.03, 26); face.rotation.x = Math.PI/2; g.add(face);
+      for (let i = 0; i < 12; i++) { const a = i/12*Math.PI*2; g.add(box(0.012, 0.02, 0.008, M(0x333), Math.sin(a)*0.13, 1.6+Math.cos(a)*0.13, 0.05)); }
+      g.add(box(0.014, 0.11, 0.008, M(0x222), 0, 1.635, 0.055));   // 短針
+      g.add(box(0.09, 0.014, 0.008, M(0x222), 0.03, 1.6, 0.055));  // 長針
       break;
     }
     case "wallshelf": {
       const s = grainMat(0x9a7a50);
       g.add(box(0.28, 0.03, 0.9, s, 0, 1.5, 0));
       g.add(box(0.28, 0.03, 0.9, s, 0, 1.1, 0));
-      for (let i = 0; i < 5; i++) g.add(box(0.16, 0.24, 0.06, M((i*83+60)%0xffffff | 0x303030), 0, 1.64, -0.35 + i*0.16));
+      const bookCols = [0x9a4a3a, 0x3a6a8a, 0xcaa24a, 0x4a7a4a, 0x8a5a8a];
+      for (let i = 0; i < 5; i++) g.add(box(0.16, 0.24, 0.06, M(bookCols[i], { rough: 0.7 }), 0, 1.64, -0.35 + i*0.16));
+      break;
+    }
+    case "laptop": {
+      g.add(box(0.34, 0.02, 0.24, M(0xd8d8dc, { metal: 0.6, rough: 0.3 }), 0, 0.02, 0.02));
+      const scr = box(0.34, 0.22, 0.02, M(0x1a1a22, { rough: 0.2 }), 0, 0.13, -0.1); scr.rotation.x = -0.35; g.add(scr);
+      const glow = box(0.3, 0.18, 0.005, M(0x2a3a5a, { emissive: 0x2a4a7a, emissiveIntensity: 0.5 }), 0, 0.14, -0.085); glow.rotation.x = -0.35; g.add(glow);
+      break;
+    }
+    case "bookstack": {
+      const cols = [0x9a4a3a, 0x3a6a8a, 0xcaa24a, 0x4a7a4a];
+      for (let i = 0; i < 4; i++) g.add(box(0.22 - i*0.01, 0.045, 0.16, M(cols[i], { rough: 0.7 }), (i%2)*0.02, 0.023 + i*0.045, 0));
+      g.add(box(0.09, 0.11, 0.09, M(0xe8e2d4, { rough: 0.6 }), 0.02, 0.24, 0.02)); // マグカップ
+      break;
+    }
+    case "mirror": {
+      g.add(box(0.5, 1.3, 0.05, grainMat(0x8a6a44), 0, 0, 0));
+      g.add(box(0.42, 1.2, 0.02, M(0xcdd6da, { metal: 0.9, rough: 0.05 }), 0, 0, 0.03));
+      break;
+    }
+    case "stringlights": {
+      const wire = M(0x3a3a30);
+      const bulb = M(0xfff2c0, { emissive: 0xffe08a, emissiveIntensity: 0.9 });
+      const span = w || 2;
+      for (let i = 0; i <= 10; i++) {
+        const x = -span/2 + i*span/10;
+        const dip = Math.sin(i/10*Math.PI) * 0.12;
+        g.add(box(0.03, 0.03, 0.03, bulb, x, 1.9 - dip, 0));
+      }
+      g.add(box(span, 0.01, 0.01, wire, 0, 1.95, 0));
+      break;
+    }
+    case "poster": {
+      g.add(box(0.5, 0.7, 0.02, M(0x2a2a30), 0, 1.5, 0.01));
+      const hue = ((opt.i || 2) * 60) % 360;
+      g.add(box(0.46, 0.66, 0.01, new THREE.MeshStandardMaterial({ color: new THREE.Color(`hsl(${hue},45%,55%)`), roughness: 0.7 }), 0, 1.5, 0.02));
+      break;
+    }
+    case "cushion": {
+      g.add(box(0.5, 0.12, 0.5, M(0xc27a5a, { rough: 0.9 }), 0, 0.06, 0));
       break;
     }
     case "kamachi": g.add(box(w - 0.1, 0.16, 0.12, M(0x5a3a1e, { rough: 0.5 }), 0, 0.08, 0)); break;
@@ -640,42 +768,72 @@ export class HouseGame {
 
   _buildDoorCasings(floor, group, yBase) {
     if (!floor.doors) return;
-    const caseMat = new THREE.MeshStandardMaterial({ map: this.tex.grain.clone(), color: 0xa5885a, roughness: 0.6 }); // 木の枠(木目)
-    const leafMat = new THREE.MeshStandardMaterial({ map: this.tex.grain.clone(), color: 0xb89a68, roughness: 0.6 }); // 建具(木目)
+    const caseMat = new THREE.MeshStandardMaterial({ map: this.tex.grain.clone(), color: 0xa5885a, roughness: 0.6 });
+    const leafMat = new THREE.MeshStandardMaterial({ map: this.tex.grain.clone(), color: 0xb89a68, roughness: 0.6 });
     leafMat.map.repeat.set(1, 2); leafMat.map.needsUpdate = true;
-    const fusumaMat = M(0xece3d1, { rough: 0.95 }); // 襖紙
-    const H = 2.04;
+    const fusumaMat = M(0xece3d1, { rough: 0.95 });
+    const frontMat = new THREE.MeshStandardMaterial({ map: this.tex.grain.clone(), color: 0x5a3a22, roughness: 0.5 }); // 玄関ドア
+    const H = 2.04, JW = 0.05;
+
+    // 隣り合うドアマスを1つの開口にまとめる(中桟をなくす)
+    const runs = [];
+    const mapH = new Map(), mapV = new Map();
     for (const d of floor.doors) {
-      const horiz = d.horizontal;
-      const cx0 = d.c * CELL, cz0 = d.r * CELL;
-      if (horiz) {
-        const x = cx0 + CELL/2, z = cz0;
-        group.add(box(CELL + 0.06, 0.08, 0.14, caseMat, x, yBase + H, z));
-        group.add(box(0.08, H, 0.14, caseMat, cx0 + 0.04, yBase + H/2, z));
-        group.add(box(0.08, H, 0.14, caseMat, cx0 + CELL - 0.04, yBase + H/2, z));
-        if (d.wash) {
-          // 襖(片引き・半開)…壁面に沿ってスライド
-          const pw = CELL * 0.5;
-          const panel = box(pw, H - 0.08, 0.04, fusumaMat, cx0 + 0.04 + pw/2, yBase + H/2, z);
-          group.add(panel);
-          group.add(box(pw, 0.05, 0.05, caseMat, cx0 + 0.04 + pw/2, yBase + H - 0.06, z));
-        } else {
-          const leaf = box(CELL - 0.1, H - 0.06, 0.04, leafMat, cx0 + 0.06, yBase + H/2, z + 0.42);
-          leaf.rotation.y = Math.PI/2 * 0.92; group.add(leaf);
+      const m = d.horizontal ? mapH : mapV, k = d.horizontal ? d.r : d.c;
+      if (!m.has(k)) m.set(k, []); m.get(k).push(d);
+    }
+    const collect = (m, horiz) => {
+      for (const [line, arr] of m) {
+        arr.sort((a, b) => horiz ? a.c - b.c : a.r - b.r);
+        let run = null;
+        for (const d of arr) {
+          const i = horiz ? d.c : d.r;
+          if (run && i === run.end) { run.end = i + 1; run.wash = run.wash || d.wash; run.entrance = run.entrance || d.entrance; }
+          else { if (run) runs.push(run); run = { horiz, line, start: i, end: i + 1, wash: !!d.wash, entrance: !!d.entrance }; }
         }
+        if (run) runs.push(run);
+      }
+    };
+    collect(mapH, true); collect(mapV, false);
+
+    for (const r of runs) {
+      const cells = r.end - r.start, Wm = cells * CELL;
+      const openLeaf = (dirX, aCoord, along0) => {
+        // 開き戸(片開き・約80°)。dirX: true=横開口
+        if (r.entrance) { // 玄関ドア(ほぼ閉・すりガラス小窓)
+          const leaf = dirX ? box(CELL-0.08, H-0.06, 0.05, frontMat, along0+CELL/2, yBase+H/2, aCoord+0.02)
+                            : box(0.05, H-0.06, CELL-0.08, frontMat, aCoord+0.02, yBase+H/2, along0+CELL/2);
+          group.add(leaf);
+          const win = dirX ? box(0.3,0.5,0.02, M(0xdfeef2,{opacity:0.5,transparent:true,rough:0.2}), along0+CELL/2, yBase+1.4, aCoord+0.05)
+                           : box(0.02,0.5,0.3, M(0xdfeef2,{opacity:0.5,transparent:true,rough:0.2}), aCoord+0.05, yBase+1.4, along0+CELL/2);
+          group.add(win); return;
+        }
+        if (r.wash) { // 襖(引き戸)…幅に応じて1〜2枚を端に寄せる
+          const panels = cells >= 2 ? 2 : 1, pw = (cells >= 2 ? Wm*0.44 : CELL*0.5);
+          for (let p = 0; p < panels; p++) {
+            const off = panels === 2 ? (p === 0 ? 0.04 + pw/2 : Wm - 0.04 - pw/2) : 0.04 + pw/2;
+            if (dirX) group.add(box(pw, H-0.08, 0.04, fusumaMat, along0 + off, yBase+H/2, aCoord));
+            else      group.add(box(0.04, H-0.08, pw, fusumaMat, aCoord, yBase+H/2, along0 + off));
+          }
+          return;
+        }
+        if (cells >= 2) return; // 広い開口(階段/バルコニー等)は開けっ放し=建具なし
+        // 通常の開き戸(壁沿いに開いた状態)
+        if (dirX) { const leaf = box(CELL-0.1, H-0.06, 0.04, leafMat, along0+0.06, yBase+H/2, aCoord+0.42); leaf.rotation.y = Math.PI/2*0.9; group.add(leaf); }
+        else      { const leaf = box(0.04, H-0.06, CELL-0.1, leafMat, aCoord+0.42, yBase+H/2, along0+0.06); leaf.rotation.y = Math.PI/2*0.9; group.add(leaf); }
+      };
+      if (r.horiz) {
+        const z = r.line * CELL, x0 = r.start * CELL, xc = x0 + Wm/2;
+        group.add(box(Wm + 0.06, 0.09, 0.15, caseMat, xc, yBase + H, z));
+        group.add(box(JW, H, 0.15, caseMat, x0 + JW/2, yBase + H/2, z));
+        group.add(box(JW, H, 0.15, caseMat, x0 + Wm - JW/2, yBase + H/2, z));
+        openLeaf(true, z, x0);
       } else {
-        const x = cx0, z = cz0 + CELL/2;
-        group.add(box(0.14, 0.08, CELL + 0.06, caseMat, x, yBase + H, z));
-        group.add(box(0.14, H, 0.08, caseMat, x, yBase + H/2, cz0 + 0.04));
-        group.add(box(0.14, H, 0.08, caseMat, x, yBase + H/2, cz0 + CELL - 0.04));
-        if (d.wash) {
-          const pw = CELL * 0.5;
-          const panel = box(0.04, H - 0.08, pw, fusumaMat, x, yBase + H/2, cz0 + 0.04 + pw/2);
-          group.add(panel);
-        } else {
-          const leaf = box(0.04, H - 0.06, CELL - 0.1, leafMat, x + 0.42, yBase + H/2, cz0 + 0.06);
-          leaf.rotation.y = Math.PI/2 * 0.92; group.add(leaf);
-        }
+        const x = r.line * CELL, z0 = r.start * CELL, zc = z0 + Wm/2;
+        group.add(box(0.15, 0.09, Wm + 0.06, caseMat, x, yBase + H, zc));
+        group.add(box(0.15, H, JW, caseMat, x, yBase + H/2, z0 + JW/2));
+        group.add(box(0.15, H, JW, caseMat, x, yBase + H/2, z0 + Wm - JW/2));
+        openLeaf(false, x, z0);
       }
     }
   }
@@ -684,7 +842,7 @@ export class HouseGame {
     for (const f of floor.furniture) {
       const mesh = furnitureMesh(f.kind, f, this.tex);
       if (!mesh.children.length) continue;
-      mesh.position.set(f.x, yBase, f.z);
+      mesh.position.set(f.x, yBase + (f.y || 0), f.z);
       mesh.rotation.y = f.rot || 0;
       group.add(mesh);
     }

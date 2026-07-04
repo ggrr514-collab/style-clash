@@ -340,16 +340,23 @@ function placeFurniture(g, rng, level) {
         break;
       }
       case "bedroom": {
+        // 「誰かの部屋」風にインテリア＆雑貨で作り込む
         const bw = Math.min(1.4, w*0.5);
         add("bed", x0 + bw/2 + 0.12, cz + d*0.05, Math.PI/2, { w: bw });
         add("nightstand", x0 + 0.28, cz - d*0.3, 0);
-        add("lamp", x0 + 0.28, cz - d*0.3, 0);
+        add("lamp", x0 + 0.28, cz - d*0.3, 0, { y: 0.44 });          // ナイトスタンドの上
         add("wardrobe", x1 - 0.3, z0 + 0.6, -Math.PI/2, { w: Math.min(1.6, d*0.5) });
         add("desk", x1 - 0.35, z1 - 0.7, -Math.PI/2);
-        add("picture", cx, z0 + 0.02, 0, { wall: "z0" });
+        add("laptop", x1 - 0.4, z1 - 0.7, -Math.PI/2, { y: 0.75 });  // デスクの上
         add("ceiling", cx, 0, 0, { ceil: true });
         add("rug", cx, cz + d*0.08, 0, { w: Math.min(1.7, w*0.55), d: Math.min(1.2, d*0.4) });
-        if (rng() < 0.5) add("plant", x0 + 0.35, z1 - 0.35, 0);
+        add("stringlights", cx, z0 + 0.05, 0, { w: w * 0.9 });        // 壁のガーランドライト
+        add("poster", x0 + w*0.62, z0 + 0.04, 0, { i: (rng()*6)|0 });
+        add("picture", x0 + w*0.32, z0 + 0.04, 0, { wall: "z0" });
+        add("bookstack", x0 + 0.55, z1 - 0.45, 0);                   // 床の本の山
+        add("cushion", cx + w*0.12, cz + d*0.24, 0);
+        add("plant", x0 + 0.38, z1 - 0.42, 0, { big: true });        // 隅の観葉植物
+        add("mirror", x1 - 0.1, cz + d*0.2, -Math.PI/2, { y: 0.85 }); // 姿見
         break;
       }
       case "washitsu": {
@@ -367,8 +374,11 @@ function placeFurniture(g, rng, level) {
         break;
       }
       case "toilet": {
-        add("toiletunit", cx, z1 - 0.35, Math.PI);
-        add("toiletpaper", x0 + 0.12, z1 - 0.6, 0);
+        add("toiletunit", cx, z1 - 0.45, Math.PI);
+        add("toiletpaper", x0 + 0.14, z1 - 0.8, 0);
+        add("toiletmat", cx, z1 - 0.35, 0, { w: Math.min(0.85, w * 0.72) });
+        add("cornershelf", x0 + 0.22, z0 + 0.22, 0);
+        add("tabletop", x0 + 0.22, z0 + 0.22, 0, { y: 1.32 });   // 棚上の小さな観葉
         break;
       }
       case "washroom": {
