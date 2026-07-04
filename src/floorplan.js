@@ -57,7 +57,7 @@ function houseTemplate(rng, size) {
     { d: 2, cells: [ {t:"corridor", w:2}, {t:"genkan", w:2}, {t:"washroom", w:W-4} ] },
     { d: 2, cells: closetW > 0
         ? [ {t:"corridor", w:2, mergeUp:true}, {t:"bath", w:3}, {t:"toilet", w:2}, {t:"closet", w:closetW} ]
-        : [ {t:"corridor", w:2, mergeUp:true}, {t:"bath", w:3}, {t:"toilet", w:2} ] },
+        : [ {t:"corridor", w:2, mergeUp:true}, {t:"bath", w:W-4}, {t:"toilet", w:2} ] },
     { d: 3, cells: [ {t:"stairs", w:2}, {t:"kitchen", w:2}, {t:"ldk", w:W-4} ] },
     { d: backD, cells: [ {t:"washitsu", w:4}, {t:"ldk", w:W-4, mergeUp:true} ] },
   ];
@@ -267,15 +267,21 @@ function buildWalls(g, doorKeys, windowKeys, entrance) {
   const isBalcony = (id) => id >= 0 && rooms[id].type === "balcony";
 
   const walls = [];
+  // 種別 + 外壁フラグ("solid|1" 等)を返し、マージ判定にも使う
   const edgeType = (a, b, key) => {
     if (a === b) return null;
     if (a === -1 && b === -1) return null;
     if (entrance && key === entrance.key) return null;
     if (doorKeys.has(key)) return null;
     const oneOutside = (a === -1 || b === -1);
-    if (oneOutside && (isBalcony(a) || isBalcony(b))) return "rail";
-    if (windowKeys.has(key)) return "window";
-    return "solid";
+    const ext = oneOutside ? 1 : 0;
+    if (oneOutside && (isBalcony(a) || isBalcony(b))) return "rail|1";
+    if (windowKeys.has(key)) return "window|" + ext;
+    return "solid|" + ext;
+  };
+  const push = (o) => {
+    const [type, ext] = o.type.split("|");
+    walls.push({ ...o, type, exterior: ext === "1" });
   };
 
   for (let c = 0; c <= cols; c++) {
@@ -284,7 +290,7 @@ function buildWalls(g, doorKeys, windowKeys, entrance) {
       let t = null;
       if (r < rows) t = edgeType(roomOf(c-1,r), roomOf(c,r), `v:${c}:${r}`);
       if (run && run.type === t) continue;
-      if (run) { walls.push({ x1:c*CELL, z1:run.r0*CELL, x2:c*CELL, z2:r*CELL, type:run.type, horizontal:false }); run = null; }
+      if (run) { push({ x1:c*CELL, z1:run.r0*CELL, x2:c*CELL, z2:r*CELL, type:run.type, horizontal:false }); run = null; }
       if (t) run = { r0:r, type:t };
     }
   }
@@ -294,7 +300,7 @@ function buildWalls(g, doorKeys, windowKeys, entrance) {
       let t = null;
       if (c < cols) t = edgeType(roomOf(c,r-1), roomOf(c,r), `h:${c}:${r}`);
       if (run && run.type === t) continue;
-      if (run) { walls.push({ x1:run.c0*CELL, z1:r*CELL, x2:c*CELL, z2:r*CELL, type:run.type, horizontal:true }); run = null; }
+      if (run) { push({ x1:run.c0*CELL, z1:r*CELL, x2:c*CELL, z2:r*CELL, type:run.type, horizontal:true }); run = null; }
       if (t) run = { c0:c, type:t };
     }
   }
@@ -344,9 +350,11 @@ function placeFurniture(g, rng, level) {
       }
       case "washitsu": {
         add("tatamiset", cx, cz, 0);
-        add("closetlow", cx, z0 + 0.3, 0, { w: w - 0.5 });
-        add("picture", cx, z0 + 0.02, 0, { wall: "z0" });
-        add("ceiling", cx, 0, 0, { ceil: true });
+        // 床の間(奥壁の一方の隅)＋床柱
+        add("tokonoma", x0 + 0.85, z0 + 0.32, 0, { w: 1.5 });
+        add("woodpost", x0 + 1.62, z0 + 0.2, 0);
+        if (w > 3.4) add("closetlow", x1 - 0.9, z0 + 0.3, 0, { w: Math.min(1.6, w - 2.0) });
+        add("slatceil", cx, 0, 0, { ceil: true, w, d });   // 竿縁天井
         break;
       }
       case "bath": {
@@ -366,6 +374,7 @@ function placeFurniture(g, rng, level) {
       }
       case "genkan": {
         add("shoebox", x1 - 0.2, cz, -Math.PI/2);
+        add("kamachi", cx, z1 - 0.08, 0, { w });   // 上がり框
         break;
       }
       case "hall":
@@ -425,20 +434,25 @@ export function generateHouse(size = 1, seed) {
   const fur1 = placeFurniture(g1, rng, 0);
   const fur2 = placeFurniture(g2, rng, 1);
 
-  // ドア位置(枠描画用)。"kind:c:r" → {horizontal,c,r}
-  const doorList = (keys, entrance) => {
+  // ドア位置(枠描画用)。"kind:c:r" → {horizontal,c,r, wash}
+  const doorList = (g, keys, entrance) => {
+    const { grid, cols } = g;
+    const at = (c, r) => (c<0||r<0||c>=cols||r>=g.rows) ? -1 : grid[r*cols+c];
+    const isWash = (id) => id >= 0 && g.rooms[id].type === "washitsu";
     const arr = [];
     for (const k of keys) {
-      const [kind, c, r] = k.split(":");
-      arr.push({ horizontal: kind === "h", c: +c, r: +r });
+      const [kind, cc, rr] = k.split(":"); const c = +cc, r = +rr;
+      const a = kind === "h" ? at(c, r-1) : at(c-1, r);
+      const b = at(c, r);
+      arr.push({ horizontal: kind === "h", c, r, wash: isWash(a) || isWash(b) });
     }
-    if (entrance) arr.push({ horizontal: entrance.kind === "h", c: entrance.c, r: entrance.r });
+    if (entrance) arr.push({ horizontal: entrance.kind === "h", c: entrance.c, r: entrance.r, entrance: true });
     return arr;
   };
 
   const floors = [
-    { level: 0, cols, rows: g1.rows, grid: g1.grid, rooms: g1.rooms, walls: w1, furniture: fur1, entrance: o1.entrance, doors: doorList(d1.doorKeys, o1.entrance) },
-    { level: 1, cols, rows: g2.rows, grid: g2.grid, rooms: g2.rooms, walls: w2, furniture: fur2, entrance: null, doors: doorList(d2.doorKeys, null) },
+    { level: 0, cols, rows: g1.rows, grid: g1.grid, rooms: g1.rooms, walls: w1, furniture: fur1, entrance: o1.entrance, doors: doorList(g1, d1.doorKeys, o1.entrance) },
+    { level: 1, cols, rows: g2.rows, grid: g2.grid, rooms: g2.rooms, walls: w2, furniture: fur2, entrance: null, doors: doorList(g2, d2.doorKeys, null) },
   ];
 
   // 階段情報(メートル)。下端 z0(Y=0) → 上端 z1(Y=FLOOR_H)
@@ -450,19 +464,25 @@ export function generateHouse(size = 1, seed) {
     w: stairsRoom.w, d: stairsRoom.d,
   };
 
-  // スポーン: 1F 廊下の手前で奥(+z)を向く
-  const corridor = g1.rooms.find(rm => rm.type === "corridor") || g1.rooms.find(rm => rm.type === "genkan");
-  const spawn = {
-    x: corridor.cx,
-    z: corridor.z0 * CELL + Math.min(0.7, corridor.d * 0.4),
-    yaw: Math.PI, floor: 0,
-  };
+  // スポーン: 家の外に立って玄関(和風の外観)を眺め、そこから入る
+  const ent = o1.entrance;
+  let spawn;
+  if (ent && ent.kind === "h") {
+    spawn = { x: (ent.c + 0.5) * CELL, z: ent.r * CELL - 3.2, yaw: Math.PI, floor: 0, outside: true };
+  } else if (ent && ent.kind === "v") {
+    spawn = { x: ent.c * CELL - 3.2, z: (ent.r + 0.5) * CELL, yaw: Math.PI / 2, floor: 0, outside: true };
+  } else {
+    const gk = g1.rooms.find(rm => rm.type === "genkan") || g1.rooms[0];
+    spawn = { x: gk.cx, z: gk.z0 * CELL - 3.2, yaw: Math.PI, floor: 0, outside: true };
+  }
+  // 玄関の位置(ポーチ/飛び石用)
+  const entrance = ent ? { x: (ent.kind === "h" ? (ent.c + 0.5) : ent.c) * CELL, z: (ent.kind === "h" ? ent.r : (ent.r + 0.5)) * CELL, kind: ent.kind } : null;
 
   return {
     label: tpl.label, seed,
     cols, rows: g1.rows,
     widthM: cols * CELL, depthM: g1.rows * CELL,
     floorH: FLOOR_H,
-    floors, stairs: st, spawn,
+    floors, stairs: st, spawn, entrance,
   };
 }

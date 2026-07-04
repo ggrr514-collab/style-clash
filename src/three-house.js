@@ -24,11 +24,11 @@ function makeCanvasTexture(draw, size = 256) {
 }
 function woodTex() {
   return makeCanvasTexture((ctx, s) => {
-    ctx.fillStyle = "#c9a978"; ctx.fillRect(0, 0, s, s);
+    ctx.fillStyle = "#d8b98a"; ctx.fillRect(0, 0, s, s);
     const planks = 5, pw = s / planks;
     for (let i = 0; i < planks; i++) {
-      const base = 188 + Math.floor(Math.sin(i * 2.7) * 20);
-      ctx.fillStyle = `rgb(${base},${base - 42},${base - 92})`;
+      const base = 202 + Math.floor(Math.sin(i * 2.7) * 18);
+      ctx.fillStyle = `rgb(${base},${base - 38},${base - 84})`;
       ctx.fillRect(i * pw, 0, pw - 1.5, s);
       ctx.strokeStyle = "rgba(110,74,38,0.22)"; ctx.lineWidth = 1;
       for (let y = 0; y < s; y += 6 + (i % 3)) {
@@ -63,15 +63,61 @@ function tileTex(col = "#e8e6df") {
 }
 function wallpaperTex() {
   return makeCanvasTexture((ctx, s) => {
-    ctx.fillStyle = "#f2ede3"; ctx.fillRect(0, 0, s, s);
-    // 微細なクロス地の質感
+    ctx.fillStyle = "#f4efe6"; ctx.fillRect(0, 0, s, s);
     for (let i = 0; i < 2600; i++) {
-      const g = 224 + Math.floor(Math.random() * 22);
-      ctx.fillStyle = `rgba(${g},${g-6},${g-16},0.5)`;
+      const g = 228 + Math.floor(Math.random() * 20);
+      ctx.fillStyle = `rgba(${g},${g-5},${g-14},0.5)`;
       ctx.fillRect(Math.random()*s, Math.random()*s, 1, 1);
     }
-    ctx.strokeStyle = "rgba(210,202,188,0.5)"; ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(214,206,192,0.5)"; ctx.lineWidth = 1;
     for (let x = 0; x < s; x += 16) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, s); ctx.stroke(); }
+  }, 128);
+}
+/* 瓦(いぶし銀の和瓦) */
+function kawaraTex() {
+  return makeCanvasTexture((ctx, s) => {
+    ctx.fillStyle = "#3c4652"; ctx.fillRect(0, 0, s, s);
+    const rows = 7, rh = s / rows;
+    for (let r = 0; r < rows; r++) {
+      const y = r * rh;
+      const shade = 60 + (r % 2) * 10;
+      ctx.fillStyle = `rgb(${shade},${shade+8},${shade+20})`;
+      ctx.fillRect(0, y, s, rh - 2);
+      // 縦の瓦割り + ハイライト
+      for (let x = 0; x < s; x += rh) {
+        ctx.fillStyle = "rgba(120,135,155,0.5)";
+        ctx.fillRect(x + 1, y + 1, 2, rh - 4);
+        ctx.fillStyle = "rgba(20,26,34,0.6)";
+        ctx.fillRect(x + rh - 2, y, 2, rh);
+      }
+      ctx.fillStyle = "rgba(15,20,28,0.7)"; ctx.fillRect(0, y + rh - 3, s, 3);
+    }
+  });
+}
+/* 窯業系サイディング(横張り・淡色) */
+function sidingTex() {
+  return makeCanvasTexture((ctx, s) => {
+    ctx.fillStyle = "#e7e0d2"; ctx.fillRect(0, 0, s, s);
+    const rows = 6, rh = s / rows;
+    for (let r = 0; r < rows; r++) {
+      const g = 226 + Math.floor(Math.sin(r*1.7)*8);
+      ctx.fillStyle = `rgb(${g},${g-6},${g-18})`;
+      ctx.fillRect(0, r*rh, s, rh - 1);
+      ctx.fillStyle = "rgba(150,140,120,0.5)"; ctx.fillRect(0, (r+1)*rh - 2, s, 1.5);
+      ctx.fillStyle = "rgba(255,255,255,0.25)"; ctx.fillRect(0, r*rh, s, 1);
+    }
+  });
+}
+/* 障子(和紙 + 木の格子) */
+function shojiTex() {
+  return makeCanvasTexture((ctx, s) => {
+    ctx.fillStyle = "#f3efe4"; ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = "#8a6a44"; ctx.lineWidth = s*0.045;
+    ctx.strokeRect(0, 0, s, s);
+    ctx.lineWidth = s*0.022;
+    const nx = 4, ny = 5;
+    for (let i = 1; i < nx; i++) { ctx.beginPath(); ctx.moveTo(i*s/nx, 0); ctx.lineTo(i*s/nx, s); ctx.stroke(); }
+    for (let i = 1; i < ny; i++) { ctx.beginPath(); ctx.moveTo(0, i*s/ny); ctx.lineTo(s, i*s/ny); ctx.stroke(); }
   }, 128);
 }
 
@@ -233,6 +279,30 @@ function furnitureMesh(kind, opt) {
       break;
     }
     case "ceiling": g.add(box(0.5,0.07,0.5, M(0xffffff,{emissive:0xfff0d2,emissiveIntensity:0.8}), 0, WALL_H-0.05, 0)); break;
+    case "tokonoma": {
+      // 床板(一段高い) + 奥の壁 + 掛軸 + 花瓶
+      g.add(box(w, 0.12, 0.5, M(0x5a3a1e, { rough: 0.5 }), 0, 0.06, 0));           // 床板
+      g.add(box(w, 2.0, 0.06, M(0xe7ddc8, { rough: 0.95 }), 0, 1.0, -0.24));       // 床の間の壁
+      g.add(box(w, 0.1, 0.14, M(0x4a2f18, { rough: 0.5 }), 0, 2.0, -0.2));         // 落とし掛け
+      g.add(box(0.34, 1.15, 0.02, M(0xd8cbb0, { rough: 1 }), -w*0.15, 1.15, -0.2)); // 掛軸
+      g.add(box(0.34, 0.08, 0.02, M(0x6a4a2a), -w*0.15, 1.72, -0.2));
+      g.add(box(0.16, 0.34, 0.16, M(0x2a4a5a, { rough: 0.3 }), w*0.22, 0.29, 0));  // 花瓶
+      g.add(box(0.04, 0.4, 0.04, M(0x3a6a3a), w*0.22, 0.6, 0));                     // 生け花
+      break;
+    }
+    case "woodpost": g.add(box(0.12, WALL_H, 0.12, M(0x6a4a28, { rough: 0.55 }), 0, WALL_H/2, 0)); break;
+    case "kamachi": g.add(box(w - 0.1, 0.16, 0.12, M(0x5a3a1e, { rough: 0.5 }), 0, 0.08, 0)); break;
+    case "slatceil": {
+      // 竿縁天井: 木の下地 + 細い竿
+      const ww = opt.w || 3, dd = opt.d || 3;
+      g.add(box(ww - 0.1, 0.03, dd - 0.1, M(0xcabf98, { rough: 0.9 }), 0, WALL_H - 0.04, 0));
+      const n = Math.max(2, Math.round(ww / 0.45));
+      for (let i = 0; i < n; i++) {
+        const x = -ww/2 + (i + 0.5) * (ww / n);
+        g.add(box(0.04, 0.04, dd - 0.12, M(0x6a4a28, { rough: 0.6 }), x, WALL_H - 0.08, 0));
+      }
+      break;
+    }
     default: break;
   }
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -274,6 +344,7 @@ export class HouseGame {
     this.textures = {
       wood: woodTex(), tatami: tatamiTex(), wall: wallpaperTex(),
       tile: tileTex("#e8e6df"), wet: tileTex("#dfeaee"), concrete: tileTex("#9a9a9a"),
+      kawara: kawaraTex(), siding: sidingTex(), shoji: shojiTex(),
     };
     this._clock = new THREE.Clock();
 
@@ -309,13 +380,11 @@ export class HouseGame {
     const topH = FLOOR_H + WALL_H;
 
     // 屋外の地面
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300),
-      new THREE.MeshStandardMaterial({ color: 0x6f8a5a, roughness: 1 }));
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400),
+      new THREE.MeshStandardMaterial({ color: 0x748d59, roughness: 1 }));
     ground.rotation.x = -Math.PI/2; ground.position.set(cx, -0.02, cz);
     ground.receiveShadow = true; group.add(ground);
-    group.add(box(W + 0.5, 0.2, D + 0.5, M(0x8a8378), cx, -0.1, cz));   // 基礎
-    // 屋根
-    group.add(box(W + 0.6, 0.25, D + 0.6, M(0x6b4f3a), cx, topH + 0.15, cz));
+    group.add(box(W + 0.5, 0.35, D + 0.5, M(0x8a8378), cx, -0.16, cz));   // 基礎(コンクリ)
 
     for (const floor of house.floors) {
       const yBase = floor.level * FLOOR_H;
@@ -325,6 +394,8 @@ export class HouseGame {
       this._buildFurniture(floor, group, yBase);
     }
     this._buildStairs(group);
+    this._buildRoof(group, W, D, cx, cz, topH);
+    this._buildExterior(group, house, W, D, cx, cz);
 
     // スポーン
     const sp = house.spawn;
@@ -372,44 +443,56 @@ export class HouseGame {
   _buildWalls(floor, group, yBase) {
     const wallMat = new THREE.MeshStandardMaterial({ map: this.textures.wall.clone(), color: 0xffffff, roughness: 0.94 });
     wallMat.map.repeat.set(2, 1.4); wallMat.map.needsUpdate = true;
-    const baseMat = M(0x6a5136, { rough: 0.6 });      // 巾木
-    const railMat = M(0x9aa0a4, { rough: 0.55, metal: 0.35 });
-    const glassMat = new THREE.MeshStandardMaterial({ color: 0xbfe6f0, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.26, side: THREE.DoubleSide });
-    const frameMat = M(0xdad3c6, { rough: 0.6 });
+    const baseMat = M(0x5a3f26, { rough: 0.55 });      // 巾木(こげ茶)
+    const railMat = M(0x8a8f93, { rough: 0.55, metal: 0.35 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0xbfe6f0, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.24, side: THREE.DoubleSide });
+    const frameMat = M(0x6a4a2a, { rough: 0.6 });      // 窓枠(木)
+    // サイディング外壁マテリアル(外壁だけ差し替え)
+    const sidingMat = () => { const m = new THREE.MeshStandardMaterial({ map: this.textures.siding.clone(), roughness: 0.9 }); m.map.repeat.set(1.4, 1.2); m.map.needsUpdate = true; return m; };
+    const shojiMat = () => { const m = new THREE.MeshStandardMaterial({ map: this.textures.shoji.clone(), roughness: 0.95, transparent: true, opacity: 0.94, emissive: 0xfff4e0, emissiveIntensity: 0.12 }); return m; };
 
     for (const w of floor.walls) {
       const midx = (w.x1 + w.x2)/2, midz = (w.z1 + w.z2)/2;
       const len = Math.hypot(w.x2 - w.x1, w.z2 - w.z1);
       const horiz = w.horizontal;
       const sx = horiz ? len : WALL_T, sz = horiz ? WALL_T : len;
+      const outMat = w.exterior ? sidingMat() : wallMat;
 
       if (w.type === "rail") {
-        const h = 1.05;
-        group.add(box(sx, h, sz, railMat, midx, yBase + h/2, midz));
-        group.add(box(sx, 0.05, sz, M(0x777), midx, yBase + h, midz));
+        const h = 1.02;
+        // 和風の格子手すり
+        group.add(box(sx, 0.06, sz, M(0x6a4a2a), midx, yBase + h, midz));
+        group.add(box(sx, 0.06, sz, M(0x6a4a2a), midx, yBase + 0.05, midz));
+        const n = Math.max(2, Math.round(len / 0.22));
+        for (let i = 0; i <= n; i++) {
+          const f = i / n;
+          const bx2 = w.x1 + (w.x2 - w.x1) * f, bz2 = w.z1 + (w.z2 - w.z1) * f;
+          group.add(box(0.03, h, 0.03, M(0x7a5a34), bx2, yBase + h/2, bz2));
+        }
         this._addWallAABB(w, floor.level); continue;
       }
       if (w.type === "window") {
-        const sill = 0.85, head = 2.02;
-        group.add(box(sx, sill, sz, wallMat, midx, yBase + sill/2, midz));
-        group.add(box(sx, WALL_H - head, sz, wallMat, midx, yBase + (head + WALL_H)/2, midz));
+        const sill = 0.85, head = 2.05;
+        group.add(box(sx, sill, sz, outMat, midx, yBase + sill/2, midz));
+        group.add(box(sx, WALL_H - head, sz, outMat, midx, yBase + (head + WALL_H)/2, midz));
         const gx = horiz ? len : 0.04, gz = horiz ? 0.04 : len;
         group.add(box(gx, head - sill, gz, glassMat, midx, yBase + (sill + head)/2, midz));
-        group.add(box(sx, 0.05, sz, frameMat, midx, yBase + sill, midz));
-        group.add(box(sx, 0.05, sz, frameMat, midx, yBase + head, midz));
-        // カーテン(内側)
-        const off = 0.09;
+        // 木の窓枠
+        group.add(box(sx, 0.06, sz, frameMat, midx, yBase + sill, midz));
+        group.add(box(sx, 0.06, sz, frameMat, midx, yBase + head, midz));
+        // 障子(内側・格子＋和紙のパネル)
+        const off = 0.075;
         const cx2 = midx + (horiz ? 0 : (w.x1 <= CELL*0.01 ? off : -off));
         const cz2 = midz + (horiz ? (w.z1 <= CELL*0.01 ? off : -off) : 0);
-        const cw = horiz ? len*0.94 : 0.06, cd = horiz ? 0.06 : len*0.94;
-        const curtain = new THREE.Mesh(new THREE.BoxGeometry(cw, head - sill + 0.15, cd),
-          new THREE.MeshStandardMaterial({ color: 0xe9e2d4, roughness: 1 }));
-        curtain.position.set(cx2, yBase + (sill + head)/2 + 0.05, cz2);
-        group.add(curtain);
+        const cw = horiz ? len : 0.03, cd = horiz ? 0.03 : len;
+        const sm = shojiMat(); sm.map.repeat.set(horiz ? Math.max(1, len/0.9) : 1, 1); sm.map.needsUpdate = true;
+        const shoji = new THREE.Mesh(new THREE.BoxGeometry(cw, head - sill, cd), sm);
+        shoji.position.set(cx2, yBase + (sill + head)/2, cz2);
+        group.add(shoji);
         this._addWallAABB(w, floor.level); continue;
       }
       // 通常壁 + 巾木
-      group.add(box(sx, WALL_H, sz, wallMat, midx, yBase + WALL_H/2, midz));
+      group.add(box(sx, WALL_H, sz, outMat, midx, yBase + WALL_H/2, midz));
       const bx = horiz ? len : WALL_T + 0.02, bz = horiz ? WALL_T + 0.02 : len;
       group.add(box(bx, 0.09, bz, baseMat, midx, yBase + 0.045, midz));
       this._addWallAABB(w, floor.level);
@@ -418,27 +501,41 @@ export class HouseGame {
 
   _buildDoorCasings(floor, group, yBase) {
     if (!floor.doors) return;
-    const caseMat = M(0xe4ddcf, { rough: 0.6 });
-    const leafMat = M(0xceb98f, { rough: 0.7 });
-    const H = 2.02;
+    const caseMat = M(0x7a5a38, { rough: 0.6 });   // 木の枠
+    const leafMat = M(0x9a7a50, { rough: 0.65 });  // 建具(木)
+    const fusumaMat = M(0xece3d1, { rough: 0.95 }); // 襖紙
+    const H = 2.04;
     for (const d of floor.doors) {
       const horiz = d.horizontal;
       const cx0 = d.c * CELL, cz0 = d.r * CELL;
       if (horiz) {
         const x = cx0 + CELL/2, z = cz0;
-        group.add(box(CELL + 0.06, 0.08, 0.14, caseMat, x, yBase + H, z));       // まぐさ
+        group.add(box(CELL + 0.06, 0.08, 0.14, caseMat, x, yBase + H, z));
         group.add(box(0.08, H, 0.14, caseMat, cx0 + 0.04, yBase + H/2, z));
         group.add(box(0.08, H, 0.14, caseMat, cx0 + CELL - 0.04, yBase + H/2, z));
-        // 開いた扉(壁沿い)
-        const leaf = box(CELL - 0.1, H - 0.05, 0.04, leafMat, cx0 + 0.06, yBase + H/2, z + 0.42);
-        leaf.rotation.y = Math.PI/2 * 0.92; group.add(leaf);
+        if (d.wash) {
+          // 襖(片引き・半開)…壁面に沿ってスライド
+          const pw = CELL * 0.5;
+          const panel = box(pw, H - 0.08, 0.04, fusumaMat, cx0 + 0.04 + pw/2, yBase + H/2, z);
+          group.add(panel);
+          group.add(box(pw, 0.05, 0.05, caseMat, cx0 + 0.04 + pw/2, yBase + H - 0.06, z));
+        } else {
+          const leaf = box(CELL - 0.1, H - 0.06, 0.04, leafMat, cx0 + 0.06, yBase + H/2, z + 0.42);
+          leaf.rotation.y = Math.PI/2 * 0.92; group.add(leaf);
+        }
       } else {
         const x = cx0, z = cz0 + CELL/2;
         group.add(box(0.14, 0.08, CELL + 0.06, caseMat, x, yBase + H, z));
         group.add(box(0.14, H, 0.08, caseMat, x, yBase + H/2, cz0 + 0.04));
         group.add(box(0.14, H, 0.08, caseMat, x, yBase + H/2, cz0 + CELL - 0.04));
-        const leaf = box(0.04, H - 0.05, CELL - 0.1, leafMat, x + 0.42, yBase + H/2, cz0 + 0.06);
-        leaf.rotation.y = Math.PI/2 * 0.92; group.add(leaf);
+        if (d.wash) {
+          const pw = CELL * 0.5;
+          const panel = box(0.04, H - 0.08, pw, fusumaMat, x, yBase + H/2, cz0 + 0.04 + pw/2);
+          group.add(panel);
+        } else {
+          const leaf = box(0.04, H - 0.06, CELL - 0.1, leafMat, x + 0.42, yBase + H/2, cz0 + 0.06);
+          leaf.rotation.y = Math.PI/2 * 0.92; group.add(leaf);
+        }
       }
     }
   }
@@ -480,6 +577,107 @@ export class HouseGame {
       r.rotation.x = Math.atan2(FLOOR_H, runLen);
       group.add(r);
     }
+  }
+
+  /* 寄棟の瓦屋根 + 深い軒 */
+  _buildRoof(group, W, D, cx, cz, topH) {
+    const OH = 0.55;              // 軒の出
+    const eaveY = topH + 0.02;
+    const a = W + OH*2, b = D + OH*2;   // 軒先の寸法
+    const long = Math.max(a, b), short = Math.min(a, b);
+    const RH = short * 0.32;     // 棟の高さ
+    const ridgeY = eaveY + RH;
+    const L = long - short;      // 棟の長さ
+    const alongZ = b >= a;
+
+    // 6頂点
+    const v = alongZ ? [
+      [cx-a/2, eaveY, cz-b/2], [cx+a/2, eaveY, cz-b/2],
+      [cx+a/2, eaveY, cz+b/2], [cx-a/2, eaveY, cz+b/2],
+      [cx, ridgeY, cz-L/2], [cx, ridgeY, cz+L/2],
+    ] : [
+      [cx-a/2, eaveY, cz-b/2], [cx+a/2, eaveY, cz-b/2],
+      [cx+a/2, eaveY, cz+b/2], [cx-a/2, eaveY, cz+b/2],
+      [cx-L/2, ridgeY, cz], [cx+L/2, ridgeY, cz],
+    ];
+    // 面(三角形分割)
+    const tris = alongZ
+      ? [[0,1,4],[2,3,5],[3,0,4],[3,4,5],[1,2,5],[1,5,4]]
+      : [[3,0,4],[1,2,5],[0,1,5],[0,5,4],[2,3,4],[2,4,5]];
+    const pos = [], uv = [];
+    for (const [i,j,k] of tris) {
+      for (const idx of [i,j,k]) { pos.push(v[idx][0], v[idx][1], v[idx][2]); }
+      // 簡易UV(斜面に瓦を流す)
+      uv.push(0,0, 1,0, 0.5,1);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    geo.computeVertexNormals();
+    const km = this.textures.kawara.clone(); km.needsUpdate = true; km.repeat.set(long*0.8, short*0.8);
+    const roof = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: km, roughness: 0.85, side: THREE.DoubleSide }));
+    roof.castShadow = true; group.add(roof);
+
+    // 破風/鼻隠し(軒先の板) + 軒天
+    const fasc = M(0x4a4a52, { rough: 0.7 });
+    group.add(box(a + 0.1, 0.16, 0.06, fasc, cx, eaveY, cz - b/2));
+    group.add(box(a + 0.1, 0.16, 0.06, fasc, cx, eaveY, cz + b/2));
+    group.add(box(0.06, 0.16, b + 0.1, fasc, cx - a/2, eaveY, cz));
+    group.add(box(0.06, 0.16, b + 0.1, fasc, cx + a/2, eaveY, cz));
+    const soffit = M(0xcabfa6, { rough: 0.9 });
+    const s2 = new THREE.Mesh(new THREE.PlaneGeometry(a, b), soffit);
+    s2.rotation.x = Math.PI/2; s2.position.set(cx, eaveY - 0.02, cz); group.add(s2);
+  }
+
+  /* 玄関ポーチ・飛び石・庭木・塀 */
+  _buildExterior(group, house, W, D, cx, cz) {
+    const ent = house.entrance;
+    // 玄関ポーチ(小屋根＋沓脱ぎ石)
+    if (ent) {
+      const outward = ent.kind === "h" ? { x: 0, z: -1 } : { x: -1, z: 0 };
+      const px = ent.x + outward.x * 0.7, pz = ent.z + outward.z * 0.7;
+      // 沓脱ぎ/踏み石
+      group.add(box(1.3, 0.12, 0.9, M(0x9a938a, { rough: 1 }), px, 0.06, pz));
+      // ポーチ屋根(片流れ)と柱
+      const roofY = 2.25;
+      const pr = box(1.8, 0.1, 1.4, M(0x4a4a52, { rough: 0.7 }), px, roofY, pz);
+      pr.rotation.x = (ent.kind === "h" ? 1 : 0) * -0.12; group.add(pr);
+      for (const s of [-0.7, 0.7]) {
+        const cxp = px + (ent.kind === "h" ? s : 0.6);
+        const czp = pz + (ent.kind === "h" ? 0.6 : s);
+        group.add(box(0.1, roofY, 0.1, M(0x6a4a2a), cxp, roofY/2, czp));
+      }
+    }
+    // 飛び石(スポーンから玄関へ)
+    const sp = house.spawn;
+    if (ent) {
+      const steps = 4;
+      for (let i = 1; i <= steps; i++) {
+        const f = i / (steps + 1);
+        const sx = sp.x + (ent.x - sp.x) * f, sz = sp.z + (ent.z - sp.z) * f - 0.6 * (1 - f);
+        const stone = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.3, 0.08, 7),
+          new THREE.MeshStandardMaterial({ color: 0x8f8a80, roughness: 1 }));
+        stone.position.set(sx, 0.04, sz); stone.receiveShadow = true; group.add(stone);
+      }
+    }
+    // 庭木(株立ち風)
+    const treeX = cx > W/2 ? 0.9 : W - 0.9, treeZ = -2.2;
+    const trunk = M(0x5a4028, { rough: 1 });
+    group.add(box(0.16, 1.4, 0.16, trunk, treeX, 0.7, treeZ));
+    const foli = M(0x4a7a3a, { rough: 1 }), foli2 = M(0x3c6a30, { rough: 1 });
+    for (const [dx,dy,dz,s] of [[0,1.8,0,1.0],[0.4,1.5,0.3,0.7],[-0.35,1.6,-0.25,0.7],[0.1,2.2,-0.1,0.7]])
+      group.add(box(s, s, s, (dx+dz>0?foli:foli2), treeX+dx, dy, treeZ+dz));
+    // 低い塀(前面・門の隙間あり)
+    const wallMat = M(0xd8d0c0, { rough: 0.95 });
+    const fz = -3.6;
+    const gateX = sp.x;
+    for (const seg of [[0.2, gateX-1.0], [gateX+1.0, W-0.2]]) {
+      const len = seg[1] - seg[0];
+      if (len > 0.3) group.add(box(len, 1.1, 0.14, wallMat, (seg[0]+seg[1])/2, 0.55, fz));
+    }
+    // 門柱
+    group.add(box(0.22, 1.35, 0.22, M(0xc8c0b0), gateX-1.0, 0.68, fz));
+    group.add(box(0.22, 1.35, 0.22, M(0xc8c0b0), gateX+1.0, 0.68, fz));
   }
 
   _addWallAABB(w, floorLevel) {
@@ -593,7 +791,7 @@ export class HouseGame {
     if (key !== this._curRoom) {
       this._curRoom = key;
       const rm = id >= 0 ? floor.rooms[id] : null;
-      this.onRoom(rm ? { name: rm.name, tatami: rm.tatami, type: rm.type, floor: this.activeFloor+1 } : { name:null, floor:this.activeFloor+1 });
+      this.onRoom(rm ? { name: rm.name, tatami: rm.tatami, type: rm.type, floor: this.activeFloor+1 } : { name:"屋外", outside:true, floor:this.activeFloor+1 });
     }
   }
 
