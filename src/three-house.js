@@ -5,6 +5,7 @@
    ・壁紙/巾木/木目床/暖色照明/カーテン/ドア枠でリアルに
    ══════════════════════════════════════════════════════════════ */
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { WALL_H, WALL_T, CELL, FLOOR_H, SLAB, ROOM_TYPES } from "./floorplan.js";
 
 const EYE = 1.55;
@@ -227,8 +228,15 @@ function box(w, h, d, mat, x = 0, y = 0, z = 0) {
   m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
   return m;
 }
-function cyl(rt, rb, h, mat, x=0, y=0, z=0, seg=16) {
+function cyl(rt, rb, h, mat, x=0, y=0, z=0, seg=18) {
   const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
+  m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; return m;
+}
+// 角丸ボックス(家具用・エッジを丸めて「箱っぽさ」を消す)
+function rbox(w, h, d, mat, x=0, y=0, z=0) {
+  const r = Math.min(Math.min(w, h, d) * 0.28, 0.045);
+  const geo = r > 0.006 ? new RoundedBoxGeometry(w, h, d, 3, r) : new THREE.BoxGeometry(w, h, d);
+  const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; return m;
 }
 
@@ -297,6 +305,7 @@ function makePlant(scale = 1) {
 function furnitureMesh(kind, opt, tex) {
   const g = new THREE.Group();
   const w = opt.w || 1;
+  const box = rbox;   // 家具のボックスはすべて角丸に
   const grainMat = (tint, rep) => {
     if (!tex) return M(tint || 0x6a4a28, { rough: 0.55 });
     const m = new THREE.MeshStandardMaterial({ map: tex.grain.clone(), color: tint || 0xffffff, roughness: 0.55 });
@@ -357,8 +366,14 @@ function furnitureMesh(kind, opt, tex) {
       g.add(box(0.24, 0.2, 0.24, M(0xfff2d0, { emissive:0xffe6a8, emissiveIntensity:0.7 }), 0, 0.86, 0));
       break;
     }
-    case "wardrobe": g.add(box(w, 1.9, 0.58, M(0x9a8462), 0, 0.95, 0)),
-      g.add(box(0.03, 1.7, 0.02, M(0x555), 0, 0.95, 0.3)); break;
+    case "wardrobe": {
+      g.add(box(w, 1.92, 0.56, grainMat(0xa5896a, [2, 3]), 0, 0.96, 0));
+      g.add(box(0.02, 1.82, 0.03, M(0x3a2a1a), 0, 0.96, 0.285));           // 扉の合わせ目
+      g.add(box(0.03, 0.24, 0.05, M(0x2a2a2a, { metal: 0.5, rough: 0.3 }), -0.09, 0.96, 0.30)); // 取っ手
+      g.add(box(0.03, 0.24, 0.05, M(0x2a2a2a, { metal: 0.5, rough: 0.3 }), 0.09, 0.96, 0.30));
+      g.add(box(w + 0.03, 0.05, 0.6, grainMat(0x8a6e48), 0, 1.925, 0));    // 天板
+      break;
+    }
     case "desk": {
       const t = M(0x6a4a2a);
       g.add(box(1.1, 0.05, 0.55, t, 0, 0.73, 0));
@@ -570,7 +585,9 @@ export class HouseGame {
     this.onRoom = opts.onRoom || (() => {});
     this.onReady = opts.onReady || (() => {});
     this.onLock = opts.onLock || (() => {});
+    this.onHint = opts.onHint || (() => {});
     this._raf = null; this._disposed = false;
+    this.doors = []; this.nearDoor = null; this._hintOn = false;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -631,6 +648,7 @@ export class HouseGame {
     const group = new THREE.Group();
     this.houseGroup = group; this.scene.add(group);
     this.wallsByFloor = [[], []];
+    this.doors = []; this.nearDoor = null;
     this.house = house;
     this.stairs = house.stairs;
 
@@ -796,44 +814,81 @@ export class HouseGame {
     };
     collect(mapH, true); collect(mapV, false);
 
+    const cols = floor.cols, grid = floor.grid;
+    const areaAt = (c, r) => { const id = (c<0||r<0||c>=cols||r>=floor.rows) ? -1 : grid[r*cols+c]; return id>=0 ? floor.rooms[id].w*floor.rooms[id].d : -1; };
+    const half = WALL_T/2 + RADIUS;
+
     for (const r of runs) {
       const cells = r.end - r.start, Wm = cells * CELL;
-      const openLeaf = (dirX, aCoord, along0) => {
-        // 開き戸(片開き・約80°)。dirX: true=横開口
-        if (r.entrance) { // 玄関ドア(ほぼ閉・すりガラス小窓)
-          const leaf = dirX ? box(CELL-0.08, H-0.06, 0.05, frontMat, along0+CELL/2, yBase+H/2, aCoord+0.02)
-                            : box(0.05, H-0.06, CELL-0.08, frontMat, aCoord+0.02, yBase+H/2, along0+CELL/2);
-          group.add(leaf);
-          const win = dirX ? box(0.3,0.5,0.02, M(0xdfeef2,{opacity:0.5,transparent:true,rough:0.2}), along0+CELL/2, yBase+1.4, aCoord+0.05)
-                           : box(0.02,0.5,0.3, M(0xdfeef2,{opacity:0.5,transparent:true,rough:0.2}), aCoord+0.05, yBase+1.4, along0+CELL/2);
-          group.add(win); return;
-        }
-        if (r.wash) { // 襖(引き戸)…幅に応じて1〜2枚を端に寄せる
-          const panels = cells >= 2 ? 2 : 1, pw = (cells >= 2 ? Wm*0.44 : CELL*0.5);
-          for (let p = 0; p < panels; p++) {
-            const off = panels === 2 ? (p === 0 ? 0.04 + pw/2 : Wm - 0.04 - pw/2) : 0.04 + pw/2;
-            if (dirX) group.add(box(pw, H-0.08, 0.04, fusumaMat, along0 + off, yBase+H/2, aCoord));
-            else      group.add(box(0.04, H-0.08, pw, fusumaMat, aCoord, yBase+H/2, along0 + off));
-          }
-          return;
-        }
-        if (cells >= 2) return; // 広い開口(階段/バルコニー等)は開けっ放し=建具なし
-        // 通常の開き戸(壁沿いに開いた状態)
-        if (dirX) { const leaf = box(CELL-0.1, H-0.06, 0.04, leafMat, along0+0.06, yBase+H/2, aCoord+0.42); leaf.rotation.y = Math.PI/2*0.9; group.add(leaf); }
-        else      { const leaf = box(0.04, H-0.06, CELL-0.1, leafMat, aCoord+0.42, yBase+H/2, along0+0.06); leaf.rotation.y = Math.PI/2*0.9; group.add(leaf); }
-      };
+      // 枠(まぐさ＋方立)
       if (r.horiz) {
         const z = r.line * CELL, x0 = r.start * CELL, xc = x0 + Wm/2;
-        group.add(box(Wm + 0.06, 0.09, 0.15, caseMat, xc, yBase + H, z));
-        group.add(box(JW, H, 0.15, caseMat, x0 + JW/2, yBase + H/2, z));
-        group.add(box(JW, H, 0.15, caseMat, x0 + Wm - JW/2, yBase + H/2, z));
-        openLeaf(true, z, x0);
+        group.add(box(Wm + 0.06, 0.1, 0.16, caseMat, xc, yBase + H, z));
+        group.add(box(JW, H, 0.16, caseMat, x0 + JW/2, yBase + H/2, z));
+        group.add(box(JW, H, 0.16, caseMat, x0 + Wm - JW/2, yBase + H/2, z));
       } else {
         const x = r.line * CELL, z0 = r.start * CELL, zc = z0 + Wm/2;
-        group.add(box(0.15, 0.09, Wm + 0.06, caseMat, x, yBase + H, zc));
-        group.add(box(0.15, H, JW, caseMat, x, yBase + H/2, z0 + JW/2));
-        group.add(box(0.15, H, JW, caseMat, x, yBase + H/2, z0 + Wm - JW/2));
-        openLeaf(false, x, z0);
+        group.add(box(0.16, 0.1, Wm + 0.06, caseMat, x, yBase + H, zc));
+        group.add(box(0.16, H, JW, caseMat, x, yBase + H/2, z0 + JW/2));
+        group.add(box(0.16, H, JW, caseMat, x, yBase + H/2, z0 + Wm - JW/2));
+      }
+      // 幅広の通り抜け(階段/バルコニー等・襖でも玄関でもない)は建具なしの開放
+      if (cells >= 2 && !r.wash && !r.entrance) continue;
+
+      const lh = H - 0.06, lw = Wm - 0.03;
+      const cx = r.horiz ? (r.start*CELL + Wm/2) : r.line*CELL;
+      const cz = r.horiz ? r.line*CELL : (r.start*CELL + Wm/2);
+      const aabb = r.horiz
+        ? { minX: r.start*CELL, maxX: r.start*CELL+Wm, minZ: r.line*CELL-half, maxZ: r.line*CELL+half }
+        : { minX: r.line*CELL-half, maxX: r.line*CELL+half, minZ: r.start*CELL, maxZ: r.start*CELL+Wm };
+
+      if (r.wash) {
+        // 襖(引き戸)…閉時は開口を覆い、開けると壁沿いにスライド
+        const mat = fusumaMat;
+        const roomSide = r.horiz
+          ? (areaAt(r.start, r.line) >= areaAt(r.start, r.line-1) ? 1 : -1)
+          : (areaAt(r.line, r.start) >= areaAt(r.line-1, r.start) ? 1 : -1);
+        const off = 0.07 * roomSide;
+        const panelGeo = r.horiz ? [lw, lh, 0.04] : [0.04, lh, lw];
+        const panel = box(panelGeo[0], panelGeo[1], panelGeo[2], mat,
+          r.horiz ? cx : cx + off, yBase + H/2, r.horiz ? cz + off : cz);
+        group.add(panel);
+        const slide = Wm * 0.9;
+        const door = {
+          level: floor.level, cx, cz, t: 0, target: 0, kind: "slide", aabb,
+          base: panel.position.clone(),
+          apply(t) { if (r.horiz) panel.position.x = this.base.x + t * slide; else panel.position.z = this.base.z + t * slide; },
+        };
+        this.doors.push(door);
+      } else {
+        // 開き戸(玄関ドア or 室内ドア)。閉時は開口を塞ぐ
+        const mat = r.entrance ? frontMat : leafMat;
+        // 大きい部屋側へ開く(狭い部屋への干渉を避ける)
+        let sign;
+        if (r.horiz) sign = (r.entrance ? (areaAt(r.start, r.line) >= 0 ? 1 : -1)
+                                        : (areaAt(r.start, r.line) >= areaAt(r.start, r.line-1) ? 1 : -1));
+        else         sign = (r.entrance ? (areaAt(r.line, r.start) >= 0 ? 1 : -1)
+                                        : (areaAt(r.line, r.start) >= areaAt(r.line-1, r.start) ? 1 : -1));
+        const pivot = new THREE.Group();
+        const hingeAlong = r.start*CELL + JW;                 // 蝶番=手前側の方立
+        pivot.position.set(r.horiz ? hingeAlong : r.line*CELL, yBase, r.horiz ? r.line*CELL : hingeAlong);
+        const leaf = r.horiz ? box(lw, lh, 0.045, mat, lw/2, H/2, 0) : box(0.045, lh, lw, mat, 0, H/2, lw/2);
+        pivot.add(leaf);
+        if (r.entrance) { // 取っ手＋小窓
+          const winMat = M(0xdfeef2, { opacity: 0.5, transparent: true, rough: 0.2 });
+          if (r.horiz) { leaf.parent.add(box(0.28,0.42,0.02, winMat, lw*0.5, H*0.62, 0.03)); pivot.add(box(0.04,0.14,0.05, M(0x2a2a2a,{metal:0.6}), lw*0.82, H*0.45, 0.06)); }
+          else { pivot.add(box(0.02,0.42,0.28, winMat, 0.03, H*0.62, lw*0.5)); pivot.add(box(0.05,0.14,0.04, M(0x2a2a2a,{metal:0.6}), 0.06, H*0.45, lw*0.82)); }
+        } else { // レバーハンドル
+          if (r.horiz) pivot.add(box(0.1,0.03,0.04, M(0xb8b8bc,{metal:0.6,rough:0.3}), lw*0.86, H/2, 0.05));
+          else pivot.add(box(0.04,0.03,0.1, M(0xb8b8bc,{metal:0.6,rough:0.3}), 0.05, H/2, lw*0.86));
+        }
+        group.add(pivot);
+        const openAngle = (r.horiz ? -1 : 1) * sign * 1.55;   // 開き角
+        const door = {
+          level: floor.level, cx, cz, t: 0, target: 0, kind: "hinge", aabb,
+          apply(t) { pivot.rotation.y = t * openAngle; },
+        };
+        this.doors.push(door);
       }
     }
   }
@@ -992,7 +1047,11 @@ export class HouseGame {
   _bindControls() {
     const dom = this.renderer.domElement;
     dom.style.touchAction = "none"; dom.style.cursor = "pointer";
-    this._kd = e => { this.keys[e.code] = true; if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) e.preventDefault(); };
+    this._kd = e => {
+      this.keys[e.code] = true;
+      if (e.code === "KeyE" || e.code === "Space") this.toggleNearDoor();
+      if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) e.preventDefault();
+    };
     this._ku = e => { this.keys[e.code] = false; };
     window.addEventListener("keydown", this._kd); window.addEventListener("keyup", this._ku);
 
@@ -1058,7 +1117,39 @@ export class HouseGame {
   _collides(x, z) {
     const walls = this.wallsByFloor[this.activeFloor];
     for (const w of walls) if (x > w.minX && x < w.maxX && z > w.minZ && z < w.maxZ) return true;
+    // 閉じている(半分未満しか開いていない)ドアは通れない
+    for (const d of this.doors) {
+      if (d.level !== this.activeFloor || d.t > 0.5) continue;
+      const a = d.aabb;
+      if (x > a.minX && x < a.maxX && z > a.minZ && z < a.maxZ) return true;
+    }
     return false;
+  }
+
+  _animateDoors(dt) {
+    const k = Math.min(1, dt * 5.5);
+    for (const d of this.doors) {
+      if (Math.abs(d.t - d.target) > 0.001) { d.t += (d.target - d.t) * k; d.apply(d.t); }
+    }
+  }
+
+  _updateNearDoor() {
+    let best = null, bd = 1.8 * 1.8;
+    for (const d of this.doors) {
+      if (d.level !== this.activeFloor) continue;
+      const dx = d.cx - this.pos.x, dz = d.cz - this.pos.z;
+      const dist2 = dx*dx + dz*dz;
+      if (dist2 < bd) { bd = dist2; best = d; }
+    }
+    this.nearDoor = best;
+    const on = !!best;
+    if (on !== this._hintOn) { this._hintOn = on; this.onHint(on); }
+  }
+
+  toggleNearDoor() {
+    const d = this.nearDoor;
+    if (!d) return;
+    d.target = d.target > 0.5 ? 0 : 1;
   }
 
   _updateFloor() {
@@ -1099,7 +1190,8 @@ export class HouseGame {
       if (this._disposed) return;
       this._raf = requestAnimationFrame(loop);
       const dt = Math.min(0.05, this._clock.getDelta());
-      this._move(dt); this._updateCamera(); this._checkRoom();
+      this._move(dt); this._animateDoors(dt); this._updateNearDoor();
+      this._updateCamera(); this._checkRoom();
       this.renderer.render(this.scene, this.camera);
     };
     loop();

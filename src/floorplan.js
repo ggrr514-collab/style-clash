@@ -445,8 +445,26 @@ export function generateHouse(size = 1, seed) {
   const w1 = buildWalls(g1, d1.doorKeys, o1.windowKeys, o1.entrance);
   const w2 = buildWalls(g2, d2.doorKeys, o2.windowKeys, o2.entrance);
 
-  const fur1 = placeFurniture(g1, rng, 0);
-  const fur2 = placeFurniture(g2, rng, 1);
+  let fur1 = placeFurniture(g1, rng, 0);
+  let fur2 = placeFurniture(g2, rng, 1);
+
+  // ── 出入り口(ドア)に床置き家具を置かない ──
+  const WALL_MOUNTED = new Set(["pendant","ceiling","picture","clock","poster","stringlights","mirror","slatceil","acunit","rangehood","upcab","cornershelf","wallshelf"]);
+  const doorPts = (keys, entrance) => {
+    const pts = [];
+    for (const k of keys) {
+      const [kind, cc, rr] = k.split(":"); const c = +cc, r = +rr;
+      pts.push(kind === "h" ? { x: (c + 0.5) * CELL, z: r * CELL } : { x: c * CELL, z: (r + 0.5) * CELL });
+    }
+    if (entrance) pts.push(entrance.kind === "h" ? { x: (entrance.c + 0.5) * CELL, z: entrance.r * CELL } : { x: entrance.c * CELL, z: (entrance.r + 0.5) * CELL });
+    return pts;
+  };
+  const clearDoors = (fur, pts) => fur.filter(f => {
+    if (WALL_MOUNTED.has(f.kind) || (f.y && f.y > 0.5)) return true;   // 壁/天井/棚上は対象外
+    return !pts.some(p => Math.hypot(p.x - f.x, p.z - f.z) < 0.72);    // ドア前0.72m以内は除外
+  });
+  fur1 = clearDoors(fur1, doorPts(d1.doorKeys, o1.entrance));
+  fur2 = clearDoors(fur2, doorPts(d2.doorKeys, null));
 
   // ドア位置(枠描画用)。"kind:c:r" → {horizontal,c,r, wash}
   const doorList = (g, keys, entrance) => {

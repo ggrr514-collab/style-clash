@@ -24,6 +24,7 @@ export default function App() {
   const [room, setRoom] = useState(null);
   const [locked, setLocked] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
+  const [doorHint, setDoorHint] = useState(false);
 
   const mountRef = useRef(null);
   const gameRef = useRef(null);
@@ -49,6 +50,7 @@ export default function App() {
     const game = new HouseGame(mountRef.current, {
       onRoom: (r) => setRoom(r),
       onLock: (l) => setLocked(l),
+      onHint: (on) => setDoorHint(on),
     });
     gameRef.current = game;
     const h = generateHouse(sizeIdx);
@@ -163,6 +165,17 @@ export default function App() {
         <div style={S.miniLabel}>MAP</div>
       </div>
 
+      {/* ドア開閉のヒント / ボタン */}
+      {doorHint && !isTouch && (
+        <div style={S.doorHint}><b>E</b> または <b>Space</b> でドアを開閉</div>
+      )}
+      {isTouch && (
+        <button
+          style={{ ...S.doorBtn, opacity: doorHint ? 1 : 0.4 }}
+          onClick={() => gameRef.current?.toggleNearDoor()}
+        >🚪 ドア開閉</button>
+      )}
+
       {/* 操作ボタン */}
       <div style={S.actions}>
         <button style={S.btn} onClick={() => newHouse()}>🔀 別の家</button>
@@ -176,8 +189,8 @@ export default function App() {
             <div style={{ fontSize: 40, marginBottom: 8 }}>🖱️</div>
             <div style={{ fontSize: 18, fontWeight: 700 }}>クリックで探索スタート</div>
             <div style={{ fontSize: 13, opacity: 0.75, marginTop: 8, lineHeight: 1.7 }}>
-              <b>WASD / 矢印キー</b> … 移動<br />
-              <b>マウス</b> … 見回す ／ <b>Shift</b> … ダッシュ<br />
+              <b>WASD / 矢印キー</b> … 移動 ／ <b>マウス</b> … 見回す<br />
+              <b>E / Space</b> … ドアの開閉 ／ <b>Shift</b> … ダッシュ<br />
               階段を上ると<b>2階</b>へ ／ <b>Esc</b> … 操作解除
             </div>
           </div>
@@ -255,6 +268,17 @@ const S = {
   },
   miniLabel: { position: "absolute", top: 8, left: 12, fontSize: 10, letterSpacing: 2, color: "rgba(255,255,255,.6)", fontWeight: 700 },
   actions: { position: "absolute", left: 12, bottom: 12, display: "flex", gap: 10, zIndex: 30 },
+  doorHint: {
+    position: "absolute", left: "50%", top: "58%", transform: "translateX(-50%)", zIndex: 30,
+    background: "rgba(15,18,28,.78)", color: "#fff", padding: "7px 14px", borderRadius: 20,
+    fontSize: 13.5, border: "1px solid rgba(255,255,255,.14)", pointerEvents: "none", whiteSpace: "nowrap",
+  },
+  doorBtn: {
+    position: "absolute", right: 12, bottom: 176, zIndex: 30,
+    background: "#8ab6d8", color: "#0c1a26", border: "none", borderRadius: 24,
+    padding: "11px 16px", fontSize: 14, fontWeight: 800, cursor: "pointer",
+    boxShadow: "0 4px 14px rgba(0,0,0,.4)", transition: "opacity .15s",
+  },
   btn: {
     background: "#ffce6a", color: "#20160a", border: "none", borderRadius: 24, padding: "11px 18px",
     fontSize: 14, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 14px rgba(0,0,0,.4)",
