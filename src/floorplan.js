@@ -326,6 +326,9 @@ function placeFurniture(g, rng, level) {
         add("diningtable", x0 + Math.min(1.5, w*0.32), cz - d*0.12, 0);
         add("pendant", cx, 0, 0, { ceil: true });
         add("picture", x1 - 0.02, cz, -Math.PI/2, { wall: "x1" });
+        add("floorlamp", x1 - 0.4, z1 - 0.5, 0);
+        add("clock", cx + 0.6, z0 + 0.05, 0);
+        add("wallshelf", x0 + 0.02, cz + d*0.15, Math.PI/2);
         break;
       }
       case "kitchen": {
@@ -345,6 +348,7 @@ function placeFurniture(g, rng, level) {
         add("desk", x1 - 0.35, z1 - 0.7, -Math.PI/2);
         add("picture", cx, z0 + 0.02, 0, { wall: "z0" });
         add("ceiling", cx, 0, 0, { ceil: true });
+        add("rug", cx, cz + d*0.08, 0, { w: Math.min(1.7, w*0.55), d: Math.min(1.2, d*0.4) });
         if (rng() < 0.5) add("plant", x0 + 0.35, z1 - 0.35, 0);
         break;
       }

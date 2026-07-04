@@ -20,58 +20,157 @@ function makeCanvasTexture(draw, size = 256) {
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = 8;
+  tex.colorSpace = THREE.SRGBColorSpace;  // 色マップはsRGBで扱う(くすみ防止)
   return tex;
 }
-function woodTex() {
-  return makeCanvasTexture((ctx, s) => {
-    ctx.fillStyle = "#d8b98a"; ctx.fillRect(0, 0, s, s);
-    const planks = 5, pw = s / planks;
-    for (let i = 0; i < planks; i++) {
-      const base = 202 + Math.floor(Math.sin(i * 2.7) * 18);
-      ctx.fillStyle = `rgb(${base},${base - 38},${base - 84})`;
-      ctx.fillRect(i * pw, 0, pw - 1.5, s);
-      ctx.strokeStyle = "rgba(110,74,38,0.22)"; ctx.lineWidth = 1;
-      for (let y = 0; y < s; y += 6 + (i % 3)) {
-        ctx.beginPath(); ctx.moveTo(i * pw, y);
-        ctx.bezierCurveTo(i*pw+pw*0.3, y+2, i*pw+pw*0.6, y-2, i*pw+pw-1.5, y+(i%2?2:-2));
-        ctx.stroke();
-      }
-    }
-    ctx.strokeStyle = "rgba(70,46,22,0.45)"; ctx.lineWidth = 1.5;
-    for (let i = 0; i <= planks; i++) { ctx.beginPath(); ctx.moveTo(i * pw, 0); ctx.lineTo(i * pw, s); ctx.stroke(); }
-  });
+// 色マップ + 凹凸(bump)マップをまとめて返す
+function makeMapBump(drawColor, drawBump, size = 512) {
+  const bump = makeCanvasTexture(drawBump, size);
+  bump.colorSpace = THREE.NoColorSpace;   // 凹凸マップは線形(データ)
+  return { map: makeCanvasTexture(drawColor, size), bump };
 }
+const rand = (seed => () => { seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; })(12345);
+
+/* フローリング(乱尺張り・木目・節・面取り目地) */
+function woodFloorTex() {
+  const rows = 7;
+  const planks = (ctx, s, color) => {
+    const ph = s / rows;
+    for (let r = 0; r < rows; r++) {
+      const y = r * ph;
+      const stagger = ((r % 3) * s / 3);            // 継ぎ目を乱らす
+      const pl = s * 0.62;
+      let pi = r * 7;
+      for (let x = -stagger; x < s; x += pl) {
+        pi++;
+        // 板ごとに色味を変える(明暗のある無垢フローリング)
+        const t = (Math.sin(pi * 12.9898) * 43758.5453) % 1;
+        const v = Math.floor((t < 0 ? t + 1 : t) * 46) - 20;   // -20..+26
+        if (color) {
+          ctx.fillStyle = `rgb(${206+v},${168+v},${120+v})`;
+          ctx.fillRect(x, y, pl - 1, ph - 1);
+          // 木目(長手方向)
+          ctx.strokeStyle = "rgba(96,60,28,0.28)"; ctx.lineWidth = 1;
+          for (let gy = y + 2.5; gy < y + ph - 2; gy += 2.5 + (r % 2)) {
+            ctx.beginPath(); ctx.moveTo(x, gy);
+            ctx.bezierCurveTo(x + pl*0.3, gy + 2, x + pl*0.6, gy - 2, x + pl, gy + (r%2?1.5:-1.5));
+            ctx.stroke();
+          }
+          if ((r + Math.round(x)) % 4 === 0) {   // 節
+            ctx.fillStyle = "rgba(74,46,22,0.6)";
+            ctx.beginPath(); ctx.ellipse(x + pl*0.4, y + ph*0.5, 3, 5, 0, 0, 7); ctx.fill();
+          }
+        }
+        // 面取り目地(縦の継ぎ目)…はっきり
+        ctx.fillStyle = color ? "rgba(48,28,12,0.9)" : "rgb(50,50,50)";
+        ctx.fillRect(x + pl - 2, y, 2.5, ph);
+      }
+      // 板間の横目地
+      ctx.fillStyle = color ? "rgba(48,28,12,0.92)" : "rgb(45,45,45)";
+      ctx.fillRect(0, y + ph - 2, s, 2.5);
+    }
+  };
+  return makeMapBump(
+    (ctx, s) => { ctx.fillStyle = "#caa877"; ctx.fillRect(0,0,s,s); planks(ctx, s, true); },
+    (ctx, s) => { ctx.fillStyle = "#bbb"; ctx.fillRect(0,0,s,s); planks(ctx, s, false); },
+  );
+}
+
+/* 畳(2×2枚・目の向き互い違い・ヘリ付き) */
 function tatamiTex() {
   return makeCanvasTexture((ctx, s) => {
-    ctx.fillStyle = "#a3b168"; ctx.fillRect(0, 0, s, s);
-    ctx.strokeStyle = "rgba(78,92,44,0.30)"; ctx.lineWidth = 1;
-    for (let y = 0; y < s; y += 5) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(s, y); ctx.stroke(); }
-    ctx.strokeStyle = "#39392a"; ctx.lineWidth = 6; ctx.strokeRect(3, 3, s - 6, s - 6);
-    ctx.beginPath(); ctx.moveTo(s / 2, 0); ctx.lineTo(s / 2, s); ctx.stroke();
+    const m = s / 2;
+    for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) {
+      const ox = i * m, oy = j * m;
+      const vertical = (i + j) % 2 === 0;
+      // い草の地(青畳〜若草色)
+      const g = ctx.createLinearGradient(ox, oy, ox + m, oy + m);
+      g.addColorStop(0, "#a6b256"); g.addColorStop(1, "#93a24a");
+      ctx.fillStyle = g; ctx.fillRect(ox, oy, m, m);
+      // 目(織り)
+      ctx.strokeStyle = "rgba(96,104,48,0.45)"; ctx.lineWidth = 1;
+      for (let k = 3; k < m; k += 3) {
+        ctx.beginPath();
+        if (vertical) { ctx.moveTo(ox + k, oy + 2); ctx.lineTo(ox + k, oy + m - 2); }
+        else { ctx.moveTo(ox + 2, oy + k); ctx.lineTo(ox + m - 2, oy + k); }
+        ctx.stroke();
+      }
+      // ヘリ(長辺2辺・紺地に金の縫い)
+      const hw = m * 0.085;
+      ctx.fillStyle = "#2b3a52";
+      if (vertical) { ctx.fillRect(ox, oy, hw, m); ctx.fillRect(ox + m - hw, oy, hw, m); }
+      else { ctx.fillRect(ox, oy, m, hw); ctx.fillRect(ox, oy + m - hw, m, hw); }
+      ctx.strokeStyle = "rgba(198,168,96,0.8)"; ctx.lineWidth = 1;
+      if (vertical) {
+        ctx.beginPath(); ctx.moveTo(ox + hw*0.5, oy); ctx.lineTo(ox + hw*0.5, oy + m);
+        ctx.moveTo(ox + m - hw*0.5, oy); ctx.lineTo(ox + m - hw*0.5, oy + m); ctx.stroke();
+      } else {
+        ctx.beginPath(); ctx.moveTo(ox, oy + hw*0.5); ctx.lineTo(ox + m, oy + hw*0.5);
+        ctx.moveTo(ox, oy + m - hw*0.5); ctx.lineTo(ox + m, oy + m - hw*0.5); ctx.stroke();
+      }
+      // 畳の境目(はっきり)
+      ctx.strokeStyle = "rgba(24,24,18,0.75)"; ctx.lineWidth = 3;
+      ctx.strokeRect(ox + 1.5, oy + 1.5, m - 3, m - 3);
+    }
   });
 }
+
+/* タイル(目地に深さ・色ムラ・少し光沢) */
 function tileTex(col = "#e8e6df") {
-  return makeCanvasTexture((ctx, s) => {
-    ctx.fillStyle = col; ctx.fillRect(0, 0, s, s);
-    ctx.strokeStyle = "rgba(150,150,150,0.45)"; ctx.lineWidth = 3;
-    const n = 4, t = s / n;
+  const draw = (ctx, s, color) => {
+    ctx.fillStyle = color ? col : "#cfcfcf"; ctx.fillRect(0, 0, s, s);
+    const n = 5, t = s / n;
+    for (let iy = 0; iy < n; iy++) for (let ix = 0; ix < n; ix++) {
+      if (color) {
+        const v = 236 + Math.floor((Math.sin(ix*3.1+iy*1.7))*10);
+        ctx.fillStyle = `rgba(${v},${v-2},${v-8},0.35)`;
+        ctx.fillRect(ix*t+2, iy*t+2, t-4, t-4);
+        ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.fillRect(ix*t+3, iy*t+3, t-6, 2);
+      }
+    }
+    // 目地(暗く=凹み)
+    ctx.strokeStyle = color ? "rgba(150,148,140,0.7)" : "rgb(40,40,40)";
+    ctx.lineWidth = color ? 3 : 4;
     for (let i = 0; i <= n; i++) {
       ctx.beginPath(); ctx.moveTo(i*t, 0); ctx.lineTo(i*t, s); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(0, i*t); ctx.lineTo(s, i*t); ctx.stroke();
     }
-  });
+  };
+  return makeMapBump((ctx,s)=>draw(ctx,s,true), (ctx,s)=>draw(ctx,s,false), 384);
 }
-function wallpaperTex() {
+
+/* 壁紙(織りクロス・淡い色・微細な陰影)。tintで色替え */
+function wallpaperTex(tint = "#f3efe6") {
   return makeCanvasTexture((ctx, s) => {
-    ctx.fillStyle = "#f4efe6"; ctx.fillRect(0, 0, s, s);
-    for (let i = 0; i < 2600; i++) {
-      const g = 228 + Math.floor(Math.random() * 20);
-      ctx.fillStyle = `rgba(${g},${g-5},${g-14},0.5)`;
-      ctx.fillRect(Math.random()*s, Math.random()*s, 1, 1);
+    ctx.fillStyle = tint; ctx.fillRect(0, 0, s, s);
+    // 織りの縦横
+    ctx.strokeStyle = "rgba(0,0,0,0.05)"; ctx.lineWidth = 1;
+    for (let x = 0; x < s; x += 3) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, s); ctx.stroke(); }
+    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    for (let y = 0; y < s; y += 3) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(s, y); ctx.stroke(); }
+    // 微細な粒
+    for (let i = 0; i < 5000; i++) {
+      ctx.fillStyle = `rgba(0,0,0,${rand()*0.05})`;
+      ctx.fillRect(rand()*s, rand()*s, 1, 1);
     }
-    ctx.strokeStyle = "rgba(214,206,192,0.5)"; ctx.lineWidth = 1;
-    for (let x = 0; x < s; x += 16) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, s); ctx.stroke(); }
-  }, 128);
+  }, 256);
+}
+
+/* 柱・建具の木目(縦目・年輪) */
+function woodgrainTex() {
+  return makeCanvasTexture((ctx, s) => {
+    const g = ctx.createLinearGradient(0, 0, s, 0);
+    g.addColorStop(0, "#7a5528"); g.addColorStop(0.5, "#8a6230"); g.addColorStop(1, "#6f4a22");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = "rgba(60,38,16,0.4)"; ctx.lineWidth = 1;
+    for (let x = 2; x < s; x += 3 + (x % 5)) {
+      ctx.beginPath(); ctx.moveTo(x, 0);
+      ctx.bezierCurveTo(x + 3, s*0.3, x - 3, s*0.6, x + 2, s); ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(40,26,12,0.3)"; ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) { const x = s*(0.2+i*0.3); ctx.beginPath(); ctx.moveTo(x,0);
+      ctx.bezierCurveTo(x+8, s*0.4, x-8, s*0.7, x+4, s); ctx.stroke(); }
+  }, 256);
 }
 /* 瓦(いぶし銀の和瓦) */
 function kawaraTex() {
@@ -130,9 +229,14 @@ function box(w, h, d, mat, x = 0, y = 0, z = 0) {
 }
 
 /* ── 家具ファクトリ（内部yは床基準0） ── */
-function furnitureMesh(kind, opt) {
+function furnitureMesh(kind, opt, tex) {
   const g = new THREE.Group();
   const w = opt.w || 1;
+  const grainMat = (tint, rep) => {
+    if (!tex) return M(tint || 0x6a4a28, { rough: 0.55 });
+    const m = new THREE.MeshStandardMaterial({ map: tex.grain.clone(), color: tint || 0xffffff, roughness: 0.55 });
+    m.map.repeat.set(rep ? rep[0] : 1, rep ? rep[1] : 1); m.map.needsUpdate = true; return m;
+  };
   switch (kind) {
     case "sofa": {
       const c = M(0x6f7f90);
@@ -268,8 +372,10 @@ function furnitureMesh(kind, opt) {
       break;
     }
     case "picture": {
-      g.add(box(0.66, 0.5, 0.03, M(0x5a4630), 0, 1.55, 0));
-      g.add(box(0.56, 0.4, 0.01, M((opt.i||3)*0x2233aa % 0xffffff | 0x304050), 0, 1.55, 0.02));
+      g.add(box(0.6, 0.46, 0.03, grainMat(0x6a4a2a), 0, 1.55, 0.01));       // 額縁
+      g.add(box(0.5, 0.36, 0.012, M(0xf3efe6, { rough: 0.7 }), 0, 1.55, 0.025)); // マット
+      g.add(box(0.4, 0.26, 0.008, M(0x8aa0ae, { rough: 0.7 }), 0, 1.57, 0.03));  // 絵(淡い風景)
+      g.add(box(0.4, 0.1, 0.008, M(0xbfae86, { rough: 0.8 }), 0, 1.48, 0.03));
       break;
     }
     case "acunit": g.add(box(0.82, 0.28, 0.22, M(0xf2f2f2,{rough:0.4}), 0, WALL_H-0.4, 0)); break;
@@ -290,7 +396,27 @@ function furnitureMesh(kind, opt) {
       g.add(box(0.04, 0.4, 0.04, M(0x3a6a3a), w*0.22, 0.6, 0));                     // 生け花
       break;
     }
-    case "woodpost": g.add(box(0.12, WALL_H, 0.12, M(0x6a4a28, { rough: 0.55 }), 0, WALL_H/2, 0)); break;
+    case "woodpost": g.add(box(0.12, WALL_H, 0.12, grainMat(0x8a6636, [1, 3]), 0, WALL_H/2, 0)); break;
+    case "floorlamp": {
+      g.add(box(0.28, 0.04, 0.28, M(0x333), 0, 0.03, 0));
+      g.add(box(0.04, 1.45, 0.04, M(0x555, { metal: 0.4, rough: 0.4 }), 0, 0.75, 0));
+      g.add(box(0.34, 0.28, 0.34, M(0xf3e6c4, { emissive: 0xffe6a0, emissiveIntensity: 0.6 }), 0, 1.55, 0));
+      break;
+    }
+    case "clock": {
+      g.add(box(0.34, 0.34, 0.04, M(0xf4efe4, { rough: 0.6 }), 0, 1.6, 0.02));
+      g.add(box(0.36, 0.36, 0.03, grainMat(0x7a5836), 0, 1.6, 0.005));
+      g.add(box(0.02, 0.13, 0.01, M(0x222), 0, 1.63, 0.05));
+      g.add(box(0.1, 0.02, 0.01, M(0x222), 0.03, 1.6, 0.05));
+      break;
+    }
+    case "wallshelf": {
+      const s = grainMat(0x9a7a50);
+      g.add(box(0.28, 0.03, 0.9, s, 0, 1.5, 0));
+      g.add(box(0.28, 0.03, 0.9, s, 0, 1.1, 0));
+      for (let i = 0; i < 5; i++) g.add(box(0.16, 0.24, 0.06, M((i*83+60)%0xffffff | 0x303030), 0, 1.64, -0.35 + i*0.16));
+      break;
+    }
     case "kamachi": g.add(box(w - 0.1, 0.16, 0.12, M(0x5a3a1e, { rough: 0.5 }), 0, 0.08, 0)); break;
     case "slatceil": {
       // 竿縁天井: 木の下地 + 細い竿
@@ -325,7 +451,7 @@ export class HouseGame {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
+    renderer.toneMappingExposure = 1.0;
     container.appendChild(renderer.domElement);
     this.renderer = renderer;
 
@@ -341,9 +467,13 @@ export class HouseGame {
     this.groundY = 0; this.activeFloor = 0;
     this.keys = {};
     this.wallsByFloor = [[], []];
-    this.textures = {
-      wood: woodTex(), tatami: tatamiTex(), wall: wallpaperTex(),
-      tile: tileTex("#e8e6df"), wet: tileTex("#dfeaee"), concrete: tileTex("#9a9a9a"),
+    const woodF = woodFloorTex(), tileF = tileTex("#eae7df"), wetF = tileTex("#dfeaee"), concF = tileTex("#9a9a9a");
+    this.tex = {
+      woodMap: woodF.map, woodBump: woodF.bump,
+      tatami: tatamiTex(), wall: wallpaperTex(), grain: woodgrainTex(),
+      tileMap: tileF.map, tileBump: tileF.bump,
+      wetMap: wetF.map, wetBump: wetF.bump,
+      concMap: concF.map, concBump: concF.bump,
       kawara: kawaraTex(), siding: sidingTex(), shoji: shojiTex(),
     };
     this._clock = new THREE.Clock();
@@ -355,10 +485,10 @@ export class HouseGame {
   }
 
   _buildLights() {
-    this.scene.add(new THREE.HemisphereLight(0xdfeeff, 0x6b5f50, 0.55));
-    this.scene.add(new THREE.AmbientLight(0xfff0dd, 0.18));
-    const sun = new THREE.DirectionalLight(0xfff1d8, 1.15);
-    sun.position.set(16, 30, 12);
+    this.scene.add(new THREE.HemisphereLight(0xdfeeff, 0x6b5f50, 0.5));
+    this.scene.add(new THREE.AmbientLight(0xfff0dd, 0.14));
+    const sun = new THREE.DirectionalLight(0xfff1d8, 1.3);
+    sun.position.set(-13, 28, -9);   // 玄関側(手前)を照らす
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     const s = 26;
@@ -384,7 +514,7 @@ export class HouseGame {
       new THREE.MeshStandardMaterial({ color: 0x748d59, roughness: 1 }));
     ground.rotation.x = -Math.PI/2; ground.position.set(cx, -0.02, cz);
     ground.receiveShadow = true; group.add(ground);
-    group.add(box(W + 0.5, 0.35, D + 0.5, M(0x8a8378), cx, -0.16, cz));   // 基礎(コンクリ)
+    group.add(box(W + 0.5, 0.35, D + 0.5, M(0x8a8378), cx, -0.21, cz));   // 基礎(コンクリ・床下に収める)
 
     for (const floor of house.floors) {
       const yBase = floor.level * FLOOR_H;
@@ -409,9 +539,17 @@ export class HouseGame {
 
   _floorMat(type) {
     const info = ROOM_TYPES[type];
-    const key = info.floor === "tilewood" ? "wood" : info.floor;
-    const tex = (this.textures[key] || this.textures.wood).clone(); tex.needsUpdate = true;
-    return new THREE.MeshStandardMaterial({ map: tex, roughness: info.wet ? 0.35 : 0.82 });
+    const kind = { wood:"wood", tilewood:"wood", tatami:"tatami", tile:"tile", wet:"wet", concrete:"conc" }[info.floor] || "wood";
+    let map, bump, rough = 0.7;
+    if (kind === "wood")      { map = this.tex.woodMap; bump = this.tex.woodBump; rough = 0.62; }
+    else if (kind === "tatami"){ map = this.tex.tatami;  bump = null;             rough = 0.9; }
+    else if (kind === "tile") { map = this.tex.tileMap;  bump = this.tex.tileBump; rough = 0.45; }
+    else if (kind === "wet")  { map = this.tex.wetMap;   bump = this.tex.wetBump;  rough = 0.3; }
+    else                      { map = this.tex.concMap;  bump = this.tex.concBump; rough = 0.9; }
+    const m = map.clone(); m.needsUpdate = true;
+    const mat = new THREE.MeshStandardMaterial({ map: m, roughness: rough });
+    if (bump) { const b = bump.clone(); b.needsUpdate = true; mat.bumpMap = b; mat.bumpScale = kind === "wood" ? 0.06 : 0.04; }
+    return mat;
   }
 
   _buildFloorSlabsCeil(floor, group, yBase) {
@@ -420,20 +558,21 @@ export class HouseGame {
       if (info.floor !== "none") {
         const mat = this._floorMat(rm.type);
         const rep = rm.type === "washitsu"
-          ? [Math.max(1, Math.round(rm.w/0.95)), Math.max(1, Math.round(rm.d/0.95))]
+          ? [Math.max(1, Math.round(rm.w/1.8)), Math.max(1, Math.round(rm.d/1.8))] // 畳テクスチャ(2×2枚)=約1.8m角
           : [Math.max(1, rm.w/1.0), Math.max(1, rm.d/1.0)];
         mat.map.repeat.set(rep[0], rep[1]);
+        if (mat.bumpMap) mat.bumpMap.repeat.set(rep[0], rep[1]);
         const slab = box(rm.w, 0.1, rm.d, mat, rm.cx, yBase + 0.0, rm.cz);
-        // 上面を yBase に
         slab.position.y = yBase - 0.05;
         group.add(slab);
       }
       if (info.ceil) {
+        const ceilCol = rm.type === "washitsu" ? 0xdfd2b6 : 0xf6f3ed;
         const ceil = new THREE.Mesh(new THREE.PlaneGeometry(rm.w, rm.d),
-          new THREE.MeshStandardMaterial({ color: 0xf5f2ec, roughness: 0.95 }));
+          new THREE.MeshStandardMaterial({ color: ceilCol, roughness: 0.95 }));
         ceil.rotation.x = Math.PI/2; ceil.position.set(rm.cx, yBase + WALL_H, rm.cz);
         group.add(ceil);
-        const lamp = new THREE.PointLight(0xffe8c4, info.habitable ? 12 : 7, Math.max(rm.w, rm.d) * 2.4, 2);
+        const lamp = new THREE.PointLight(0xffe8c4, info.habitable ? 6 : 4, Math.max(rm.w, rm.d) * 2.1, 2);
         lamp.position.set(rm.cx, yBase + WALL_H - 0.2, rm.cz);
         group.add(lamp);
       }
@@ -441,15 +580,15 @@ export class HouseGame {
   }
 
   _buildWalls(floor, group, yBase) {
-    const wallMat = new THREE.MeshStandardMaterial({ map: this.textures.wall.clone(), color: 0xffffff, roughness: 0.94 });
-    wallMat.map.repeat.set(2, 1.4); wallMat.map.needsUpdate = true;
-    const baseMat = M(0x5a3f26, { rough: 0.55 });      // 巾木(こげ茶)
+    const wallMat = new THREE.MeshStandardMaterial({ map: this.tex.wall.clone(), color: 0xffffff, roughness: 0.94 });
+    wallMat.map.repeat.set(2, 1.6); wallMat.map.needsUpdate = true;
+    const baseMat = new THREE.MeshStandardMaterial({ map: this.tex.grain.clone(), color: 0x8a6a40, roughness: 0.55 }); // 巾木(木目)
+    baseMat.map.repeat.set(6, 1); baseMat.map.needsUpdate = true;
     const railMat = M(0x8a8f93, { rough: 0.55, metal: 0.35 });
     const glassMat = new THREE.MeshStandardMaterial({ color: 0xbfe6f0, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.24, side: THREE.DoubleSide });
-    const frameMat = M(0x6a4a2a, { rough: 0.6 });      // 窓枠(木)
-    // サイディング外壁マテリアル(外壁だけ差し替え)
-    const sidingMat = () => { const m = new THREE.MeshStandardMaterial({ map: this.textures.siding.clone(), roughness: 0.9 }); m.map.repeat.set(1.4, 1.2); m.map.needsUpdate = true; return m; };
-    const shojiMat = () => { const m = new THREE.MeshStandardMaterial({ map: this.textures.shoji.clone(), roughness: 0.95, transparent: true, opacity: 0.94, emissive: 0xfff4e0, emissiveIntensity: 0.12 }); return m; };
+    const frameMat = new THREE.MeshStandardMaterial({ map: this.tex.grain.clone(), roughness: 0.6 });  // 窓枠(木目)
+    const sidingMat = () => { const m = new THREE.MeshStandardMaterial({ map: this.tex.siding.clone(), roughness: 0.9 }); m.map.repeat.set(1.4, 1.2); m.map.needsUpdate = true; return m; };
+    const shojiMat = () => { const m = new THREE.MeshStandardMaterial({ map: this.tex.shoji.clone(), roughness: 0.95, transparent: true, opacity: 0.94, emissive: 0xfff4e0, emissiveIntensity: 0.12 }); return m; };
 
     for (const w of floor.walls) {
       const midx = (w.x1 + w.x2)/2, midz = (w.z1 + w.z2)/2;
@@ -501,8 +640,9 @@ export class HouseGame {
 
   _buildDoorCasings(floor, group, yBase) {
     if (!floor.doors) return;
-    const caseMat = M(0x7a5a38, { rough: 0.6 });   // 木の枠
-    const leafMat = M(0x9a7a50, { rough: 0.65 });  // 建具(木)
+    const caseMat = new THREE.MeshStandardMaterial({ map: this.tex.grain.clone(), color: 0xa5885a, roughness: 0.6 }); // 木の枠(木目)
+    const leafMat = new THREE.MeshStandardMaterial({ map: this.tex.grain.clone(), color: 0xb89a68, roughness: 0.6 }); // 建具(木目)
+    leafMat.map.repeat.set(1, 2); leafMat.map.needsUpdate = true;
     const fusumaMat = M(0xece3d1, { rough: 0.95 }); // 襖紙
     const H = 2.04;
     for (const d of floor.doors) {
@@ -542,7 +682,7 @@ export class HouseGame {
 
   _buildFurniture(floor, group, yBase) {
     for (const f of floor.furniture) {
-      const mesh = furnitureMesh(f.kind, f);
+      const mesh = furnitureMesh(f.kind, f, this.tex);
       if (!mesh.children.length) continue;
       mesh.position.set(f.x, yBase, f.z);
       mesh.rotation.y = f.rot || 0;
@@ -558,8 +698,9 @@ export class HouseGame {
     const stepH = FLOOR_H / N;
     const wx = (st.x + st.xEnd) / 2;
     const wWidth = (st.xEnd - st.x) - 0.12;
-    const mat = M(0xb08a5c, { rough: 0.7 });
-    const side = M(0x8a6a44, { rough: 0.7 });
+    const mat = new THREE.MeshStandardMaterial({ map: this.tex.grain.clone(), color: 0xc19a68, roughness: 0.65 });
+    mat.map.repeat.set(1, 1); mat.map.needsUpdate = true;
+    const side = new THREE.MeshStandardMaterial({ map: this.tex.grain.clone(), color: 0xa5825a, roughness: 0.65 });
     for (let i = 0; i < N; i++) {
       const top = (i + 1) * stepH;
       const zc = st.zBottom + (i + 0.5) * stepD;
@@ -614,7 +755,7 @@ export class HouseGame {
     geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
     geo.computeVertexNormals();
-    const km = this.textures.kawara.clone(); km.needsUpdate = true; km.repeat.set(long*0.8, short*0.8);
+    const km = this.tex.kawara.clone(); km.needsUpdate = true; km.repeat.set(long*0.8, short*0.8);
     const roof = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: km, roughness: 0.85, side: THREE.DoubleSide }));
     roof.castShadow = true; group.add(roof);
 
@@ -822,7 +963,7 @@ export class HouseGame {
     document.removeEventListener("mousemove", this._onMouseMove);
     if (document.pointerLockElement) document.exitPointerLock?.();
     if (this.houseGroup) this._disposeGroup(this.houseGroup);
-    Object.values(this.textures).forEach(t => t.dispose());
+    Object.values(this.tex).forEach(t => t && t.dispose && t.dispose());
     this.renderer.dispose();
     if (this.renderer.domElement.parentNode) this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
   }
